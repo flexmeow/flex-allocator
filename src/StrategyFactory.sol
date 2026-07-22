@@ -1,60 +1,41 @@
 // SPDX-License-Identifier: GPL-3.0
-pragma solidity ^0.8.18;
+pragma solidity 0.8.30;
 
-import {Strategy, ERC20} from "./Strategy.sol";
-import {IStrategyInterface} from "./interfaces/IStrategyInterface.sol";
+import {IStrategy} from "./interfaces/IStrategy.sol";
 
+import {FlexLenderStrategy as Strategy} from "./Strategy.sol";
+
+/// @title Strategy Factory
+/// @author Flex
+/// @notice Deploys new Flex Lender Strategy vaults
 contract StrategyFactory {
-    event NewStrategy(address indexed strategy, address indexed asset);
 
-    address public immutable emergencyAdmin;
+    /// @notice Deploy a new Flex Lender Strategy contract
+    /// @param _asset The address of the borrow token
+    /// @param _lender The address of the Lender contract
+    /// @param _management The address of the Strategy management
+    /// @param _keeper The address of the Strategy keeper
+    /// @param _performanceFeeRecipient The address that receives performance fees from the Strategy
+    /// @param _name The name of the strategy
+    /// @return The address of the newly deployed Strategy contract
+    function deploy(
+        address _asset,
+        address _lender,
+        address _management,
+        address _keeper,
+        address _performanceFeeRecipient,
+        string calldata _name
+    ) external returns (address) {
+        // Deploy the Strategy contract
+        IStrategy _strategy = IStrategy(address(new Strategy(_asset, _lender, _name)));
 
-    address public management;
-    address public performanceFeeRecipient;
-    address public keeper;
+        // Configure Strategy roles
+        _strategy.setKeeper(_keeper);
+        _strategy.setPendingManagement(_management);
+        _strategy.setPerformanceFeeRecipient(_performanceFeeRecipient);
 
-    /// @notice Track the deployments. asset => pool => strategy
-    mapping(address => address) public deployments;
-
-    constructor(address _management, address _performanceFeeRecipient, address _keeper, address _emergencyAdmin) {
-        management = _management;
-        performanceFeeRecipient = _performanceFeeRecipient;
-        keeper = _keeper;
-        emergencyAdmin = _emergencyAdmin;
+        // Return the address of the new Strategy
+        return address(_strategy);
     }
 
-    /**
-     * @notice Deploy a new Strategy.
-     * @param _asset The underlying asset for the strategy to use.
-     * @return . The address of the new strategy.
-     */
-    function newStrategy(address _asset, string calldata _name) external virtual returns (address) {
-        // tokenized strategies available setters.
-        IStrategyInterface _newStrategy = IStrategyInterface(address(new Strategy(_asset, _name)));
-
-        _newStrategy.setPerformanceFeeRecipient(performanceFeeRecipient);
-
-        _newStrategy.setKeeper(keeper);
-
-        _newStrategy.setPendingManagement(management);
-
-        _newStrategy.setEmergencyAdmin(emergencyAdmin);
-
-        emit NewStrategy(address(_newStrategy), _asset);
-
-        deployments[_asset] = address(_newStrategy);
-        return address(_newStrategy);
-    }
-
-    function setAddresses(address _management, address _performanceFeeRecipient, address _keeper) external {
-        require(msg.sender == management, "!management");
-        management = _management;
-        performanceFeeRecipient = _performanceFeeRecipient;
-        keeper = _keeper;
-    }
-
-    function isDeployedStrategy(address _strategy) external view returns (bool) {
-        address _asset = IStrategyInterface(_strategy).asset();
-        return deployments[_asset] == _strategy;
-    }
 }

@@ -1,0 +1,263 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.30;
+
+interface ITroveManager {
+
+    // ============================================================================================
+    // Enums
+    // ============================================================================================
+
+    // vyper `flags` are n^2
+    enum Status {
+        none,
+        active,
+        zombie,
+        ignore1,
+        closed,
+        ignore2,
+        ignore3,
+        ignore4,
+        liquidated
+    }
+
+    // ============================================================================================
+    // Structs
+    // ============================================================================================
+
+    struct Trove {
+        uint256 debt;
+        uint256 collateral;
+        uint256 annual_interest_rate;
+        uint64 last_debt_update_time;
+        uint64 last_debt_increase_time;
+        uint64 last_interest_rate_adj_time;
+        address owner;
+        Status status;
+    }
+
+    struct InitializeParams {
+        address lender;
+        address dutch_desk;
+        address price_oracle;
+        address sorted_troves;
+        address borrow_token;
+        address collateral_token;
+        uint256 minimum_debt;
+        uint256 safe_collateral_ratio;
+        uint256 minimum_collateral_ratio;
+        uint256 max_penalty_collateral_ratio;
+        uint256 min_liquidation_fee;
+        uint256 max_liquidation_fee;
+        uint256 upfront_interest_period;
+        uint256 interest_rate_adj_cooldown;
+        uint256 repay_cooldown;
+    }
+
+    // ============================================================================================
+    // Storage
+    // ============================================================================================
+
+    // Contracts
+    function lender() external view returns (address);
+    function dutch_desk() external view returns (address);
+    function price_oracle() external view returns (address);
+    function sorted_troves() external view returns (address);
+
+    // Tokens
+    function borrow_token() external view returns (address);
+    function collateral_token() external view returns (address);
+
+    // Market parameters
+    function one_pct() external view returns (uint256);
+    function borrow_token_precision() external view returns (uint256);
+    function min_debt() external view returns (uint256);
+    function safe_collateral_ratio() external view returns (uint256);
+    function minimum_collateral_ratio() external view returns (uint256);
+    function max_penalty_collateral_ratio() external view returns (uint256);
+    function min_liquidation_fee() external view returns (uint256);
+    function max_liquidation_fee() external view returns (uint256);
+    function upfront_interest_period() external view returns (uint256);
+    function interest_rate_adj_cooldown() external view returns (uint256);
+    function repay_cooldown() external view returns (uint256);
+    function min_annual_interest_rate() external view returns (uint256);
+    function max_annual_interest_rate() external view returns (uint256);
+
+    // Accounting
+    function zombie_trove_id() external view returns (uint256);
+    function total_debt() external view returns (uint256);
+    function total_weighted_debt() external view returns (uint256);
+    function last_debt_update_time() external view returns (uint256);
+    function collateral_balance() external view returns (uint256);
+    function unclaimed_protocol_fees() external view returns (uint256);
+    function troves(
+        uint256
+    ) external view returns (Trove memory);
+
+    // Approvals
+    function approved(
+        address owner,
+        address operator
+    ) external view returns (bool);
+
+    // ============================================================================================
+    // Initialize
+    // ============================================================================================
+
+    function initialize(
+        InitializeParams calldata params
+    ) external;
+
+    // ============================================================================================
+    // External view functions
+    // ============================================================================================
+
+    function get_upfront_fee(
+        uint256 debt_amount,
+        uint256 annual_interest_rate
+    ) external view returns (uint256);
+    function get_upfront_fee(
+        uint256 debt_amount,
+        uint256 annual_interest_rate,
+        bool is_existing_debt
+    ) external view returns (uint256);
+    function get_trove_debt_after_interest(
+        uint256 trove_id
+    ) external view returns (uint256);
+
+    // ============================================================================================
+    // Sync total debt
+    // ============================================================================================
+
+    function sync_total_debt() external returns (uint256);
+
+    // ============================================================================================
+    // Approvals
+    // ============================================================================================
+
+    function approve(
+        address operator,
+        bool _approved
+    ) external;
+
+    // ============================================================================================
+    // Protocol fees
+    // ============================================================================================
+
+    function claim_protocol_fees(
+        uint256 min_borrow_out,
+        uint256 min_collateral_out
+    ) external;
+
+    // ============================================================================================
+    // Open trove
+    // ============================================================================================
+
+    function open_trove(
+        uint256 owner_index,
+        uint256 collateral_amount,
+        uint256 debt_amount,
+        uint256 upper_hint,
+        uint256 lower_hint,
+        uint256 annual_interest_rate,
+        uint256 max_upfront_fee,
+        uint256 min_borrow_out,
+        uint256 min_collateral_out
+    ) external returns (uint256);
+    function open_trove(
+        uint256 owner_index,
+        uint256 collateral_amount,
+        uint256 debt_amount,
+        uint256 upper_hint,
+        uint256 lower_hint,
+        uint256 annual_interest_rate,
+        uint256 max_upfront_fee,
+        uint256 min_borrow_out,
+        uint256 min_collateral_out,
+        address owner
+    ) external returns (uint256);
+    function open_trove(
+        uint256 owner_index,
+        uint256 collateral_amount,
+        uint256 debt_amount,
+        uint256 upper_hint,
+        uint256 lower_hint,
+        uint256 annual_interest_rate,
+        uint256 max_upfront_fee,
+        uint256 min_borrow_out,
+        uint256 min_collateral_out,
+        address owner,
+        bytes calldata data
+    ) external returns (uint256);
+
+    // ============================================================================================
+    // Adjust trove
+    // ============================================================================================
+
+    function add_collateral(
+        uint256 trove_id,
+        uint256 collateral_amount
+    ) external;
+    function remove_collateral(
+        uint256 trove_id,
+        uint256 collateral_amount
+    ) external;
+    function borrow(
+        uint256 trove_id,
+        uint256 debt_amount,
+        uint256 max_upfront_fee,
+        uint256 min_borrow_out,
+        uint256 min_collateral_out
+    ) external;
+    function borrow(
+        uint256 trove_id,
+        uint256 debt_amount,
+        uint256 max_upfront_fee,
+        uint256 min_borrow_out,
+        uint256 min_collateral_out,
+        uint256 collateral_amount,
+        bytes calldata data
+    ) external;
+    function repay(
+        uint256 trove_id,
+        uint256 debt_amount
+    ) external;
+    function adjust_interest_rate(
+        uint256 trove_id,
+        uint256 new_annual_interest_rate,
+        uint256 prev_id,
+        uint256 next_id,
+        uint256 max_upfront_fee
+    ) external;
+
+    // ============================================================================================
+    // Close trove
+    // ============================================================================================
+
+    function close_trove(
+        uint256 trove_id
+    ) external;
+    function close_zombie_trove(
+        uint256 trove_id
+    ) external;
+
+    // ============================================================================================
+    // Liquidate trove
+    // ============================================================================================
+
+    function liquidate_trove(
+        uint256 trove_id,
+        uint256 max_debt_to_repay,
+        address receiver,
+        bytes calldata data
+    ) external returns (uint256);
+
+    // ============================================================================================
+    // Redeem
+    // ============================================================================================
+
+    function redeem(
+        uint256 debt_amount,
+        address receiver
+    ) external;
+
+}
