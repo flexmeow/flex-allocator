@@ -23,6 +23,8 @@ interface IStrategy is IBaseHealthCheck {
         address _owner
     ) external view returns (bool);
 
+    function proceedsReceiver() external view returns (address);
+
     // ============================================================================================
     // Management functions
     // ============================================================================================
@@ -55,6 +57,14 @@ interface IStrategy is IBaseHealthCheck {
     function setAllowed(
         address _address,
         bool _isAllowed
+    ) external;
+
+    // ============================================================================================
+    // Proceeds receiver
+    // ============================================================================================
+
+    function setProceedsReceiver(
+        address _receiver
     ) external;
 
 }

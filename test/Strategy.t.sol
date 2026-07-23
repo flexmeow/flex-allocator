@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
+import {IVault} from "../script/interfaces/IVault.sol";
+import {IVaultFactory} from "../script/interfaces/IVaultFactory.sol";
+
 import "./Base.sol";
 
 contract StrategyTests is Base {
+
+    // 3.0.4 Vault Factory
+    IVaultFactory public constant VAULT_FACTORY = IVaultFactory(0x770D0d1Fb036483Ed4AbB6d53c1C88fb277D812F);
 
     function setUp() public override {
         Base.setUp();
@@ -442,6 +448,190 @@ contract StrategyTests is Base {
         vm.prank(_wrongCaller);
         vm.expectRevert("!management");
         strategy.deployIdleFunds(_amount);
+    }
+
+    function test_setProceedsReceiver_widensWithdrawLimit(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drain the Lender's idle completely
+        openTrove(address(77), asset.balanceOf(address(LENDER)));
+
+        // Without a receiver the limit is capped by the Lender's idle
+        assertEq(strategy.proceedsReceiver(), address(0), "E0");
+        assertEq(strategy.availableWithdrawLimit(user), 0, "E1");
+
+        // Setting the receiver removes the limit
+        strategy.setProceedsReceiver(user);
+        assertEq(strategy.proceedsReceiver(), user, "E2");
+        assertEq(strategy.availableWithdrawLimit(user), type(uint256).max, "E3");
+    }
+
+    function test_redeem_proceedsReceiver_kicksAuctionToReceiver(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drain the Lender's idle completely
+        openTrove(address(77), asset.balanceOf(address(LENDER)));
+
+        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
+        IAuction _auction = IAuction(_dutchDesk.auction());
+        uint256 _nonceBefore = _dutchDesk.nonce();
+
+        // Without a receiver the withdrawal is capped by the Lender's idle
+        uint256 _shares = strategy.balanceOf(user);
+        vm.startPrank(user);
+        vm.expectRevert("ERC4626: redeem more than max");
+        strategy.redeem(_shares, user, user);
+
+        // Set the receiver and redeem the full position
+        strategy.setProceedsReceiver(user);
+        strategy.redeem(_shares, user, user);
+        vm.stopPrank();
+
+        // The position is closed and an auction was kicked with the user as receiver
+        assertEq(strategy.balanceOf(user), 0, "E0");
+        assertEq(_dutchDesk.nonce(), _nonceBefore + 1, "E1");
+        uint256 _auctionId = _nonceBefore;
+        assertTrue(_auction.is_active(_auctionId), "E2");
+        assertEq(_auction.auctions(_auctionId).receiver, user, "E3");
+
+        // Take the auction -- the proceeds flow directly to the user
+        uint256 _balanceBefore = asset.balanceOf(user);
+        takeAuction(_auctionId, _auction);
+        assertApproxEqRel(asset.balanceOf(user) - _balanceBefore, _amount, 1e16, "E4"); // 1%
+    }
+
+    function test_setProceedsReceiver_lastWriteWins(
+        address _a,
+        address _b
+    ) public {
+        vm.assume(_a != address(0) && _b != address(0));
+
+        // Anyone can set, last write wins
+        vm.prank(_a);
+        strategy.setProceedsReceiver(_a);
+        assertEq(strategy.proceedsReceiver(), _a, "E0");
+        vm.prank(_b);
+        strategy.setProceedsReceiver(_b);
+        assertEq(strategy.proceedsReceiver(), _b, "E1");
+
+        // Setting the zero address disarms
+        strategy.setProceedsReceiver(address(0));
+        assertEq(strategy.proceedsReceiver(), address(0), "E2");
+    }
+
+    /// forge-config: default.isolate = true
+    function test_proceedsReceiver_clearedBetweenTransactions() public {
+        strategy.setProceedsReceiver(user);
+
+        // Transient storage clears at the transaction boundary
+        assertEq(strategy.proceedsReceiver(), address(0), "E0");
+    }
+
+    /// forge-config: default.isolate = true
+    function test_proceedsReceiver_setInPriorTxHasNoEffect(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drain the Lender's idle completely
+        openTrove(address(77), asset.balanceOf(address(LENDER)));
+
+        // An attacker sets themselves as receiver in their own transaction
+        address _attacker = address(666);
+        vm.prank(_attacker);
+        strategy.setProceedsReceiver(_attacker);
+
+        // The user's withdrawal in a later transaction is unaffected: the receiver is cleared,
+        // so the over-idle redeem reverts instead of routing anything to the attacker
+        uint256 _shares = strategy.balanceOf(user);
+        vm.prank(user);
+        vm.expectRevert("ERC4626: redeem more than max");
+        strategy.redeem(_shares, user, user);
+    }
+
+    // The transaction is the trust boundary: a receiver set earlier in the SAME tx (e.g. a batched
+    // multicall) applies to any withdrawal after it, so always set it right before withdrawing
+    function test_proceedsReceiver_sameTxSetRedirectsOtherWithdrawals(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // An attacker sets themselves as receiver earlier in the same transaction
+        address _attacker = address(666);
+        vm.prank(_attacker);
+        strategy.setProceedsReceiver(_attacker);
+
+        // The user's idle-covered withdrawal in the same tx is delivered to the attacker
+        uint256 _shares = strategy.balanceOf(user);
+        uint256 _userBefore = asset.balanceOf(user);
+        uint256 _attackerBefore = asset.balanceOf(_attacker);
+        vm.prank(user);
+        strategy.redeem(_shares, user, user);
+
+        assertEq(asset.balanceOf(user), _userBefore, "E0");
+        assertApproxEqAbs(asset.balanceOf(_attacker) - _attackerBefore, _amount, 1, "E1");
+    }
+
+    function test_redeem_proceedsReceiver_throughVault(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        // Deploy a V3 vault and wire the strategy to it
+        IVault _vault = IVault(VAULT_FACTORY.deploy_new_vault(address(asset), "Flex USDC yVault", "yvFlexUSDC", address(this), 7 days));
+        _vault.set_role(address(this), 16383);
+        _vault.set_deposit_limit(type(uint256).max);
+        _vault.add_strategy(address(strategy));
+        _vault.update_max_debt_for_strategy(address(strategy), type(uint256).max);
+        vm.prank(management);
+        strategy.setAllowed(address(_vault), true);
+
+        // Deposit into the vault and allocate everything to the strategy
+        airdrop(asset, user, _amount);
+        vm.startPrank(user);
+        asset.approve(address(_vault), _amount);
+        _vault.deposit(_amount, user);
+        vm.stopPrank();
+        _vault.update_debt(address(strategy), _amount);
+
+        // Drain the Lender's idle completely
+        openTrove(address(77), asset.balanceOf(address(LENDER)));
+
+        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
+        IAuction _auction = IAuction(_dutchDesk.auction());
+        uint256 _nonceBefore = _dutchDesk.nonce();
+
+        // Exit through the vault: set the receiver, then redeem allowing full loss
+        uint256 _shares = _vault.balanceOf(user);
+        address[] memory _strategies = new address[](1);
+        _strategies[0] = address(strategy);
+        vm.startPrank(user);
+        strategy.setProceedsReceiver(user);
+        _vault.redeem(_shares, user, user, MAX_BPS, _strategies);
+        vm.stopPrank();
+
+        // The vault position is closed and an auction was kicked with the user as receiver
+        assertEq(_vault.balanceOf(user), 0, "E0");
+        assertEq(_dutchDesk.nonce(), _nonceBefore + 1, "E1");
+        uint256 _auctionId = _nonceBefore;
+        assertEq(_auction.auctions(_auctionId).receiver, user, "E2");
+
+        // Take the auction -- the proceeds flow directly to the user
+        uint256 _balanceBefore = asset.balanceOf(user);
+        takeAuction(_auctionId, _auction);
+        assertApproxEqRel(asset.balanceOf(user) - _balanceBefore, _amount, 1e16, "E3"); // 1%
     }
 
 }

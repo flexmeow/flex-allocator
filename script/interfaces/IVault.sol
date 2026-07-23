@@ -184,6 +184,19 @@ interface IVault {
 
     function lastProfitUpdate() external view returns (uint256);
 
+    //// STANDARD ERC-4626/ERC-20 FUNCTIONS \\\\
+
+    function totalAssets() external view returns (uint256);
+
+    function balanceOf(
+        address owner
+    ) external view returns (uint256);
+
+    function deposit(
+        uint256 assets,
+        address receiver
+    ) external returns (uint256);
+
     //// NON-STANDARD ERC-4626 FUNCTIONS \\\\
 
     function withdraw(

@@ -44,6 +44,10 @@ contract FlexLenderStrategy is BaseHealthCheck {
     /// @notice Addresses allowed to deposit when openDeposits is false
     mapping(address => bool) public allowed;
 
+    /// @notice Transaction-scoped withdrawal receiver. When set, the entire withdrawal is sent
+    ///         directly to it and may exceed the Lender's idle liquidity
+    address public transient proceedsReceiver;
+
     // ============================================================================================
     // Constructor
     // ============================================================================================
@@ -80,6 +84,10 @@ contract FlexLenderStrategy is BaseHealthCheck {
     function availableWithdrawLimit(
         address /*_owner*/
     ) public view override returns (uint256) {
+        // If a `proceedsReceiver` is set, there is no limit
+        if (proceedsReceiver != address(0)) return type(uint256).max;
+
+        // Otherwise only what can be withdrawn from idle liquidity
         return asset.balanceOf(address(this)) + asset.balanceOf(address(LENDER));
     }
 
@@ -157,6 +165,20 @@ contract FlexLenderStrategy is BaseHealthCheck {
     }
 
     // ============================================================================================
+    // Proceeds receiver
+    // ============================================================================================
+
+    /// @notice Set the withdrawal receiver for the current transaction
+    /// @dev The entire withdrawal is sent directly to the receiver, idle liquidity atomically and
+    ///      the rest via a redemption auction, and is accounted as a loss on the withdrawal
+    /// @param _receiver The address to receive the withdrawal
+    function setProceedsReceiver(
+        address _receiver
+    ) external {
+        proceedsReceiver = _receiver;
+    }
+
+    // ============================================================================================
     // Internal mutative functions
     // ============================================================================================
 
@@ -171,8 +193,10 @@ contract FlexLenderStrategy is BaseHealthCheck {
     function _freeFunds(
         uint256 _amount
     ) internal override {
-        // Withdraw without triggering a collateral redemption
-        LENDER.redeem(LENDER.convertToShares(_amount), address(this), address(this));
+        // Withdraw and potentially trigger a collateral redemption.
+        // If `proceedsReceiver` is set, the full withdrawal is delivered to it, with any
+        // shortfall beyond the Lender's idle liquidity redeemed via a collateral auction
+        LENDER.redeem(LENDER.convertToShares(_amount), proceedsReceiver == address(0) ? address(this) : proceedsReceiver, address(this));
     }
 
     /// @inheritdoc BaseStrategy
