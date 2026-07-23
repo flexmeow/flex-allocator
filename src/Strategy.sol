@@ -41,12 +41,12 @@ contract FlexLenderStrategy is BaseHealthCheck {
     /// @notice Whether deposits are open to everyone
     bool public openDeposits;
 
-    /// @notice Addresses allowed to deposit when openDeposits is false
-    mapping(address => bool) public allowed;
-
     /// @notice Transaction-scoped withdrawal receiver. When set, the entire withdrawal is sent
     ///         directly to it and may exceed the Lender's idle liquidity
     address public transient proceedsReceiver;
+
+    /// @notice Addresses allowed to deposit when openDeposits is false
+    mapping(address => bool) public allowed;
 
     // ============================================================================================
     // Constructor

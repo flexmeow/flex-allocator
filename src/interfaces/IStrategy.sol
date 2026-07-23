@@ -19,11 +19,11 @@ interface IStrategy is IBaseHealthCheck {
 
     function openDeposits() external view returns (bool);
 
+    function proceedsReceiver() external view returns (address);
+
     function allowed(
         address _owner
     ) external view returns (bool);
-
-    function proceedsReceiver() external view returns (address);
 
     // ============================================================================================
     // Management functions
