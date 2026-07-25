@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {IMorphoOracleFactory} from "@flex-contracts/script/interfaces/IMorphoOracleFactory.sol";
+import {IMorphoOracleFactory} from "../interfaces/IMorphoOracleFactory.sol";
 
 import {InfinifiFlexLenderStrategy} from "../../src/integrations/InfinifiStrategy.sol";
 

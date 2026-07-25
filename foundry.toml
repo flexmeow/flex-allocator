@@ -11,7 +11,6 @@ remappings = [
     "forge-std/=lib/forge-std/src/",
     "@tokenized-strategy/=lib/tokenized-strategy/src/",
     "@periphery/=lib/tokenized-strategy-periphery/src/",
-    "@flex-contracts/=lib/flex-contracts/",
 ]
 
 [lint]

@@ -3,7 +3,7 @@ pragma solidity 0.8.30;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-import {ICatFactory} from "@flex-contracts/script/interfaces/ICatFactory.sol";
+import {ICatFactory} from "./interfaces/ICatFactory.sol";
 
 import {ILender} from "../src/interfaces/ILender.sol";
 import {IStrategy} from "../src/interfaces/IStrategy.sol";
