@@ -223,7 +223,7 @@ contract StrategyTests is Base {
         uint256 _nonceBefore = _dutchDesk.nonce();
 
         vm.prank(management);
-        uint256 _freed = strategy.forceFreeFunds(_amount, _amount - 1);
+        uint256 _freed = strategy.forceFreeFunds(_amount, _amount - 1, false);
 
         // No auction was kicked - the Lender covered it from idle
         assertEq(_dutchDesk.nonce(), _nonceBefore, "auction kicked");
@@ -251,7 +251,7 @@ contract StrategyTests is Base {
 
         // Force-free the full amount - shortfall kicks an auction (no min-out enforced, async delivery)
         vm.prank(management);
-        strategy.forceFreeFunds(_amount, 0);
+        strategy.forceFreeFunds(_amount, 0, false);
 
         assertEq(_dutchDesk.nonce(), _nonceBefore + 1, "E0");
 
@@ -280,7 +280,7 @@ contract StrategyTests is Base {
         // `_minOut = _amount` enforces an atomic delivery the Lender can't satisfy
         vm.prank(management);
         vm.expectRevert("shrekt");
-        strategy.forceFreeFunds(_amount, _amount);
+        strategy.forceFreeFunds(_amount, _amount, false);
     }
 
     function test_deployIdleFunds(
@@ -436,7 +436,7 @@ contract StrategyTests is Base {
 
         vm.prank(_wrongCaller);
         vm.expectRevert("!management");
-        strategy.forceFreeFunds(_amount, _minOut);
+        strategy.forceFreeFunds(_amount, _minOut, false);
     }
 
     function test_deployIdleFunds_wrongCaller(
@@ -461,13 +461,15 @@ contract StrategyTests is Base {
         openTrove(address(77), asset.balanceOf(address(LENDER)));
 
         // Without a receiver the limit is capped by the Lender's idle
-        assertEq(strategy.proceedsReceiver(), address(0), "E0");
-        assertEq(strategy.availableWithdrawLimit(user), 0, "E1");
+        assertEq(strategy.availableWithdrawLimit(user), 0, "E0");
 
         // Setting the receiver removes the limit
         strategy.setProceedsReceiver(user);
-        assertEq(strategy.proceedsReceiver(), user, "E2");
-        assertEq(strategy.availableWithdrawLimit(user), type(uint256).max, "E3");
+        assertEq(strategy.availableWithdrawLimit(user), type(uint256).max, "E1");
+
+        // Setting the zero address disarms
+        strategy.setProceedsReceiver(address(0));
+        assertEq(strategy.availableWithdrawLimit(user), 0, "E2");
     }
 
     function test_redeem_proceedsReceiver_kicksAuctionToReceiver(
@@ -509,30 +511,39 @@ contract StrategyTests is Base {
     }
 
     function test_setProceedsReceiver_lastWriteWins(
-        address _a,
-        address _b
+        uint256 _amount
     ) public {
-        vm.assume(_a != address(0) && _b != address(0));
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
 
-        // Anyone can set, last write wins
-        vm.prank(_a);
-        strategy.setProceedsReceiver(_a);
-        assertEq(strategy.proceedsReceiver(), _a, "E0");
-        vm.prank(_b);
-        strategy.setProceedsReceiver(_b);
-        assertEq(strategy.proceedsReceiver(), _b, "E1");
+        mintAndDepositIntoStrategy(strategy, user, _amount);
 
-        // Setting the zero address disarms
-        strategy.setProceedsReceiver(address(0));
-        assertEq(strategy.proceedsReceiver(), address(0), "E2");
+        // Drain the Lender's idle completely
+        openTrove(address(77), asset.balanceOf(address(LENDER)));
+
+        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
+        IAuction _auction = IAuction(_dutchDesk.auction());
+        uint256 _nonceBefore = _dutchDesk.nonce();
+
+        // An attacker sets themselves as receiver, but the user overwrites it before withdrawing
+        address _attacker = address(666);
+        vm.prank(_attacker);
+        strategy.setProceedsReceiver(_attacker);
+
+        vm.startPrank(user);
+        strategy.setProceedsReceiver(user);
+        strategy.redeem(strategy.balanceOf(user), user, user);
+        vm.stopPrank();
+
+        // The auction was kicked with the user as receiver -- the last write won
+        assertEq(_auction.auctions(_nonceBefore).receiver, user, "E0");
     }
 
     /// forge-config: default.isolate = true
     function test_proceedsReceiver_clearedBetweenTransactions() public {
         strategy.setProceedsReceiver(user);
 
-        // Transient storage clears at the transaction boundary
-        assertEq(strategy.proceedsReceiver(), address(0), "E0");
+        // Transient storage clears at the transaction boundary, so the limit is idle-bound again
+        assertLt(strategy.availableWithdrawLimit(user), type(uint256).max, "E0");
     }
 
     /// forge-config: default.isolate = true

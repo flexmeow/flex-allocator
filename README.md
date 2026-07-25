@@ -18,6 +18,9 @@ Yearn V3 strategies for lending into [Flex](https://github.com/flexmeow/flex-con
 ## Usage
 
 ```bash
+# Build flex-contracts (needed once for the market-deployment test artifacts, requires vyper 0.4.3)
+forge build --root lib/flex-contracts
+
 # Build
 forge build
 

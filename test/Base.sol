@@ -3,6 +3,8 @@ pragma solidity 0.8.30;
 
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+import {ICatFactory} from "@flex-contracts/script/interfaces/ICatFactory.sol";
+
 import {ILender} from "../src/interfaces/ILender.sol";
 import {IStrategy} from "../src/interfaces/IStrategy.sol";
 
@@ -20,13 +22,14 @@ contract Base is DeployStrategyFactory, Test {
     // Contracts
     ERC20 public asset;
     IStrategy public strategy;
-    ILender public constant LENDER = ILender(0xA967FcDb8a2bEF38caaB6131169c9D45be550Db0);
+    ILender public LENDER;
 
     // Roles
     address public user = address(1);
     address public management = address(420);
     address public keeper = address(69);
     address public performanceFeeRecipient = address(42069);
+    address public daddy = address(0xDAD);
 
     // Fuzz bounds
     uint256 public maxFuzzAmount = 1_000_000 ether;
@@ -47,9 +50,9 @@ contract Base is DeployStrategyFactory, Test {
         // Deploy the StrategyFactory
         run();
 
-        // Deploy a Strategy wrapping the on-chain Lender
-        strategy =
-            IStrategy(strategyFactory.deploy(LENDER.asset(), address(LENDER), management, keeper, performanceFeeRecipient, "Flex Lender Strategy"));
+        // Set the Lender and deploy a Strategy wrapping it
+        LENDER = ILender(_deployLender());
+        strategy = _deployStrategy();
         asset = ERC20(strategy.asset());
         ASSET_PRECISION = 10 ** asset.decimals();
 
@@ -73,6 +76,69 @@ contract Base is DeployStrategyFactory, Test {
             maxFuzzAmount = maxFuzzAmount / (10 ** _decimalsDiff);
             minFuzzAmount = minFuzzAmount / (10 ** _decimalsDiff);
         }
+    }
+
+    // ============================================================================================
+    // Deployment hooks
+    // ============================================================================================
+
+    /// @dev The Lender the strategy wraps. Defaults to the live yvUSD/USDC Lender
+    function _deployLender() internal virtual returns (address) {
+        return 0xA967FcDb8a2bEF38caaB6131169c9D45be550Db0;
+    }
+
+    /// @dev The strategy under test. Defaults to a plain FlexLenderStrategy deployed via the factory
+    function _deployStrategy() internal virtual returns (IStrategy) {
+        return IStrategy(strategyFactory.deploy(LENDER.asset(), address(LENDER), management, keeper, performanceFeeRecipient, "Flex Lender Strategy"));
+    }
+
+    /// @dev Deploy a fresh v2 Flex market from the flex-contracts submodule build artifacts
+    function deployFlexMarket(
+        address _borrowToken,
+        address _collateralToken,
+        address _priceOracle,
+        uint256 _minimumDebt
+    ) public returns (address _lender) {
+        // Deploy the implementation contracts
+        address _troveManager = deployCode("lib/flex-contracts/out/trove_manager.vy/trove_manager.json");
+        address _sortedTroves = deployCode("lib/flex-contracts/out/sorted_troves.vy/sorted_troves.json");
+        address _dutchDesk = deployCode("lib/flex-contracts/out/dutch_desk.vy/dutch_desk.json");
+        address _auction = deployCode("lib/flex-contracts/out/auction.vy/auction.json");
+        address _lenderFactory = deployCode("lib/flex-contracts/out/LenderFactory.sol/LenderFactory.json", abi.encode(daddy));
+        ICatFactory _catFactory = ICatFactory(
+            deployCode(
+                "lib/flex-contracts/out/factory.vy/factory.json", abi.encode(_troveManager, _sortedTroves, _dutchDesk, _auction, _lenderFactory)
+            )
+        );
+
+        // Deploy the market
+        (,,,, _lender) = _catFactory.deploy(
+            ICatFactory.DeployParams({
+                borrow_token: _borrowToken,
+                collateral_token: _collateralToken,
+                price_oracle: _priceOracle,
+                minimum_debt: _minimumDebt,
+                safe_collateral_ratio: 120, // 120%
+                minimum_collateral_ratio: 110, // 110%
+                max_penalty_collateral_ratio: 105, // 105%
+                min_liquidation_fee: 50, // 0.5%
+                max_liquidation_fee: 500, // 5%
+                upfront_interest_period: 7 days,
+                interest_rate_adj_cooldown: 7 days,
+                repay_cooldown: 0,
+                minimum_price_buffer_percentage: 1e18 - 1e16, // 99%
+                starting_price_buffer_percentage: 1e18, // 100%
+                re_kick_starting_price_buffer_percentage: 1e18 + 1e15, // 100.1%
+                step_duration: 60, // 1 minute
+                step_decay_rate: 1, // 0.01%
+                auction_length: 1 days,
+                salt: bytes32(uint256(420))
+            })
+        );
+
+        // Accept Lender management as Daddy
+        vm.prank(daddy);
+        ILender(_lender).acceptManagement();
     }
 
     // ============================================================================================

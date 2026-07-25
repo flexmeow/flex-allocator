@@ -6,6 +6,8 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {BaseHealthCheck, ERC20} from "@periphery/Bases/HealthCheck/BaseHealthCheck.sol";
 import {BaseStrategy} from "@tokenized-strategy/BaseStrategy.sol";
 
+import {IAuction} from "./interfaces/IAuction.sol";
+import {IDutchDesk} from "./interfaces/IDutchDesk.sol";
 import {ILender} from "./interfaces/ILender.sol";
 
 /// @title Flex Lender Strategy
@@ -34,16 +36,26 @@ contract FlexLenderStrategy is BaseHealthCheck {
     /// @notice Lender contract
     ILender public immutable LENDER;
 
+    /// @notice Dutch Desk contract
+    IDutchDesk public immutable DUTCH_DESK;
+
+    /// @notice Auction contract
+    IAuction public immutable AUCTION;
+
+    // ============================================================================================
+    // Transient storage
+    // ============================================================================================
+
+    /// @notice Transaction-scoped withdrawal receiver. When set, the entire withdrawal is sent
+    ///         directly to it and may exceed the Lender's idle liquidity
+    address internal transient _proceedsReceiver;
+
     // ============================================================================================
     // Storage
     // ============================================================================================
 
     /// @notice Whether deposits are open to everyone
     bool public openDeposits;
-
-    /// @notice Transaction-scoped withdrawal receiver. When set, the entire withdrawal is sent
-    ///         directly to it and may exceed the Lender's idle liquidity
-    address public transient proceedsReceiver;
 
     /// @notice Addresses allowed to deposit when openDeposits is false
     mapping(address => bool) public allowed;
@@ -65,6 +77,10 @@ contract FlexLenderStrategy is BaseHealthCheck {
         LENDER = ILender(_lender);
         require(LENDER.asset() == _asset, "!asset");
 
+        // Set Dutch Desk and Auction contracts
+        DUTCH_DESK = IDutchDesk(LENDER.TROVE_MANAGER().dutch_desk());
+        AUCTION = IAuction(DUTCH_DESK.auction());
+
         // Max approve the Lender to pull the asset
         asset.forceApprove(_lender, type(uint256).max);
     }
@@ -84,8 +100,8 @@ contract FlexLenderStrategy is BaseHealthCheck {
     function availableWithdrawLimit(
         address /*_owner*/
     ) public view override returns (uint256) {
-        // If a `proceedsReceiver` is set, there is no limit
-        if (proceedsReceiver != address(0)) return type(uint256).max;
+        // If a `_proceedsReceiver` is set, there is no limit
+        if (_proceedsReceiver != address(0)) return type(uint256).max;
 
         // Otherwise only what can be withdrawn from idle liquidity
         return asset.balanceOf(address(this)) + asset.balanceOf(address(LENDER));
@@ -99,13 +115,20 @@ contract FlexLenderStrategy is BaseHealthCheck {
     /// @dev Only callable by management
     /// @dev Could trigger a collateral redemption, meaning assets will arrive asynchronously
     ///      and may create a loss on the collateral/asset conversion
+    /// @dev The take payment nets out against the proceeds owed to the strategy, so a self-take
+    ///      only succeeds without payment when the market's starting price buffer is 100%
     /// @param _amount The amount of asset to free
     /// @param _minOut Minimum amount of asset delivered atomically
+    /// @param _takeInKind Whether to self-take a kicked auction, receiving the collateral in kind
     /// @return The actual amount of asset freed
     function forceFreeFunds(
         uint256 _amount,
-        uint256 _minOut
+        uint256 _minOut,
+        bool _takeInKind
     ) external onlyManagement returns (uint256) {
+        // Cache the next auction id in case the redemption kicks one
+        uint256 _nextAuctionId = DUTCH_DESK.nonce();
+
         // Cap the amount to our max redeem
         uint256 _shares = Math.min(LENDER.previewWithdraw(_amount), LENDER.maxRedeem(address(this)));
 
@@ -114,6 +137,9 @@ contract FlexLenderStrategy is BaseHealthCheck {
 
         // Make sure we got at least the minimum amount requested
         require(_amount >= _minOut, "shrekt");
+
+        // If requested, take the kicked auction to receive the collateral in kind
+        if (_takeInKind && DUTCH_DESK.nonce() > _nextAuctionId) AUCTION.take(_nextAuctionId);
 
         // Emit event
         emit ForceFreeFunds(_amount);
@@ -175,7 +201,7 @@ contract FlexLenderStrategy is BaseHealthCheck {
     function setProceedsReceiver(
         address _receiver
     ) external {
-        proceedsReceiver = _receiver;
+        _proceedsReceiver = _receiver;
     }
 
     // ============================================================================================
@@ -194,13 +220,13 @@ contract FlexLenderStrategy is BaseHealthCheck {
         uint256 _amount
     ) internal override {
         // Withdraw and potentially trigger a collateral redemption.
-        // If `proceedsReceiver` is set, the full withdrawal is delivered to it, with any
+        // If `_proceedsReceiver` is set, the full withdrawal is delivered to it, with any
         // shortfall beyond the Lender's idle liquidity redeemed via a collateral auction
-        LENDER.redeem(LENDER.convertToShares(_amount), proceedsReceiver == address(0) ? address(this) : proceedsReceiver, address(this));
+        LENDER.redeem(LENDER.convertToShares(_amount), _proceedsReceiver == address(0) ? address(this) : _proceedsReceiver, address(this));
     }
 
     /// @inheritdoc BaseStrategy
-    function _harvestAndReport() internal view override returns (uint256) {
+    function _harvestAndReport() internal view virtual override returns (uint256) {
         // Total assets is whatever idle asset we have + our Lender shares converted to asset
         return asset.balanceOf(address(this)) + LENDER.convertToAssets(LENDER.balanceOf(address(this)));
     }
