@@ -114,7 +114,7 @@ abstract contract CooldownStrategyTests is Base {
 
         // Force-free with an in-kind take: kick + self-take at the oracle price atomically
         vm.prank(management);
-        strategy.forceFreeFunds(_amount, 0, true);
+        cooldownStrategy.forceFreeFundsInKind(_amount, 0);
 
         return _collateral().balanceOf(address(strategy));
     }

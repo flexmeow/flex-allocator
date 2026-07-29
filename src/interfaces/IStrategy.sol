@@ -21,6 +21,8 @@ interface IStrategy is IBaseHealthCheck {
 
     function openDeposits() external view returns (bool);
 
+    function pendingAuctionId() external view returns (uint256);
+
     function allowed(
         address _owner
     ) external view returns (bool);
@@ -43,13 +45,7 @@ interface IStrategy is IBaseHealthCheck {
 
     function forceFreeFunds(
         uint256 _amount,
-        uint256 _minOut,
-        bool _takeInKind
-    ) external returns (uint256);
-
-    function takeAuction(
-        uint256 _auctionId,
-        uint256 _maxTakeAmount
+        uint256 _minOut
     ) external returns (uint256);
 
     function deployIdleFunds(

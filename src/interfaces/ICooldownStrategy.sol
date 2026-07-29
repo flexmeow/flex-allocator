@@ -17,6 +17,11 @@ interface ICooldownStrategy is IStrategy {
     // Cooldown
     // ============================================================================================
 
+    function forceFreeFundsInKind(
+        uint256 _amount,
+        uint256 _minOut
+    ) external returns (uint256);
+
     function initiateCooldown(
         uint256 _shares
     ) external;

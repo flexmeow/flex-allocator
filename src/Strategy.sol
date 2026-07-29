@@ -60,6 +60,9 @@ contract FlexLenderStrategy is BaseHealthCheck {
     /// @notice Whether deposits are open to everyone
     bool public openDeposits;
 
+    /// @notice Auction kicked by the last `forceFreeFunds`
+    uint256 public pendingAuctionId;
+
     /// @notice Addresses allowed to deposit when openDeposits is false
     mapping(address => bool) public allowed;
 
@@ -88,6 +91,9 @@ contract FlexLenderStrategy is BaseHealthCheck {
         // Set Dutch Desk and Auction contracts
         DUTCH_DESK = IDutchDesk(LENDER.TROVE_MANAGER().dutch_desk());
         AUCTION = IAuction(DUTCH_DESK.auction());
+
+        // Start with an auction id that was (likely) never kicked
+        pendingAuctionId = type(uint256).max;
 
         // Max approve the Lender to pull the asset
         asset.forceApprove(_lender, type(uint256).max);
@@ -123,18 +129,18 @@ contract FlexLenderStrategy is BaseHealthCheck {
     /// @dev Only callable by management
     /// @dev Could trigger a collateral redemption, meaning assets will arrive asynchronously
     ///      and may create a loss on the collateral/asset conversion
-    /// @dev The take payment nets out against the proceeds owed to the strategy, so a self-take
-    ///      only succeeds without payment when the market's starting price buffer is 100%
+    /// @dev Cannot be called while there is an active auction
     /// @param _amount The amount of asset to free
     /// @param _minOut Minimum amount of asset delivered atomically
-    /// @param _takeInKind Whether to self-take a kicked auction, receiving the collateral in kind
     /// @return The actual amount of asset freed
     function forceFreeFunds(
         uint256 _amount,
-        uint256 _minOut,
-        bool _takeInKind
-    ) external onlyManagement returns (uint256) {
-        // Cache the next auction id in case the redemption kicks one
+        uint256 _minOut
+    ) public onlyManagement returns (uint256) {
+        // Make sure there is no active auction
+        require(!AUCTION.is_active(pendingAuctionId), "!auction");
+
+        // Cache the next auction id, in case the redemption kicks one
         uint256 _nextAuctionId = DUTCH_DESK.nonce();
 
         // Cap the amount to our max redeem
@@ -146,8 +152,8 @@ contract FlexLenderStrategy is BaseHealthCheck {
         // Make sure we got at least the minimum amount requested
         require(_amount >= _minOut, "shrekt");
 
-        // If requested, take the kicked auction to receive the collateral in kind
-        if (_takeInKind && DUTCH_DESK.nonce() > _nextAuctionId) AUCTION.take(_nextAuctionId);
+        // Record the kicked auction
+        if (DUTCH_DESK.nonce() > _nextAuctionId) pendingAuctionId = _nextAuctionId;
 
         // Emit event
         emit ForceFreeFunds(_amount);
@@ -237,6 +243,9 @@ contract FlexLenderStrategy is BaseHealthCheck {
 
     /// @inheritdoc BaseStrategy
     function _harvestAndReport() internal view virtual override returns (uint256) {
+        // Wait for our auction to be settled
+        require(!AUCTION.is_active(pendingAuctionId), "!auction");
+
         // Total assets is whatever idle asset we have + our Lender shares converted to asset
         return asset.balanceOf(address(this)) + LENDER.convertToAssets(LENDER.balanceOf(address(this)));
     }

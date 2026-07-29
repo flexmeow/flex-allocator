@@ -225,7 +225,7 @@ contract StrategyTests is Base {
         uint256 _nonceBefore = _dutchDesk.nonce();
 
         vm.prank(management);
-        uint256 _freed = strategy.forceFreeFunds(_amount, _amount - 1, false);
+        uint256 _freed = strategy.forceFreeFunds(_amount, _amount - 1);
 
         // No auction was kicked - the Lender covered it from idle
         assertEq(_dutchDesk.nonce(), _nonceBefore, "auction kicked");
@@ -253,7 +253,7 @@ contract StrategyTests is Base {
 
         // Force-free the full amount - shortfall kicks an auction (no min-out enforced, async delivery)
         vm.prank(management);
-        strategy.forceFreeFunds(_amount, 0, false);
+        strategy.forceFreeFunds(_amount, 0);
 
         assertEq(_dutchDesk.nonce(), _nonceBefore + 1, "E0");
 
@@ -269,6 +269,45 @@ contract StrategyTests is Base {
         assertApproxEqAbs(asset.balanceOf(address(strategy)), _amount, 10, "E5");
     }
 
+    // A settling auction's proceeds are not counted yet, so reports and further force frees are blocked
+    // until it settles
+    function test_forceFreeFunds_settlingAuction_blocks(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drain the Lender's idle so the force free kicks an auction
+        openTrove(address(77), _amount);
+
+        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
+        IAuction _auction = IAuction(_dutchDesk.auction());
+        uint256 _auctionId = _dutchDesk.nonce();
+
+        vm.prank(management);
+        strategy.forceFreeFunds(_amount, 0);
+        assertEq(strategy.pendingAuctionId(), _auctionId, "E0");
+
+        // Reporting is blocked while the auction settles
+        vm.prank(keeper);
+        vm.expectRevert("!auction");
+        strategy.report();
+
+        // So is freeing more funds
+        vm.prank(management);
+        vm.expectRevert("!auction");
+        strategy.forceFreeFunds(_amount, 0);
+
+        // Once the auction is taken, reporting works again. Allow a loss, since the auction settles
+        // below the oracle price by the decay it took to get filled
+        takeAuction(_auctionId, _auction);
+        vm.prank(management);
+        strategy.setLossLimitRatio(MAX_BPS - 1);
+        vm.prank(keeper);
+        strategy.report();
+    }
+
     function test_forceFreeFunds_slippage_reverts(
         uint256 _amount
     ) public {
@@ -282,7 +321,7 @@ contract StrategyTests is Base {
         // `_minOut = _amount` enforces an atomic delivery the Lender can't satisfy
         vm.prank(management);
         vm.expectRevert("shrekt");
-        strategy.forceFreeFunds(_amount, _amount, false);
+        strategy.forceFreeFunds(_amount, _amount);
     }
 
     function test_deployIdleFunds(
@@ -438,7 +477,7 @@ contract StrategyTests is Base {
 
         vm.prank(_wrongCaller);
         vm.expectRevert("!management");
-        strategy.forceFreeFunds(_amount, _minOut, false);
+        strategy.forceFreeFunds(_amount, _minOut);
     }
 
     function test_deployIdleFunds_wrongCaller(

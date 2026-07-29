@@ -48,6 +48,25 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
     // Cooldown
     // ============================================================================================
 
+    /// @notice Force a withdrawal from the Lender, taking the kicked auction to get the collateral in kind
+    /// @dev Only callable by management
+    /// @dev The take payment nets out against the proceeds owed to us, so it only succeeds without
+    ///      payment when the market has no starting price buffer
+    /// @param _amount The amount of asset to free
+    /// @param _minOut Minimum amount of asset delivered atomically
+    /// @return _freed The actual amount of asset freed
+    function forceFreeFundsInKind(
+        uint256 _amount,
+        uint256 _minOut
+    ) external onlyManagement returns (uint256 _freed) {
+        // Free the funds, which records the kicked auction if there is one
+        _freed = forceFreeFunds(_amount, _minOut);
+
+        // Take the kicked auction, receiving the collateral in kind
+        uint256 _auctionId = pendingAuctionId;
+        if (AUCTION.is_active(_auctionId)) AUCTION.take(_auctionId);
+    }
+
     /// @notice Zero out the pending redemptions accounting
     /// @dev Only callable by management
     function zeroPendingRedemptions() external onlyManagement {
