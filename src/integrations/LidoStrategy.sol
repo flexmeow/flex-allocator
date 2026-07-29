@@ -51,11 +51,13 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
 
     /// @notice Constructor
     /// @param _lender The address of the Lender contract
+    /// @param _exitRouter The address of the exit router
     /// @param _name The name of the strategy
     constructor(
         address _lender,
+        address _exitRouter,
         string memory _name
-    ) CooldownFlexLenderStrategy(WETH, _lender, _name) {
+    ) CooldownFlexLenderStrategy(WETH, _lender, _exitRouter, _name) {
         // Make sure the collateral (wstETH) unwraps to stETH
         require(IWstETH(address(COLLATERAL)).stETH() == address(STETH), "!steth");
 

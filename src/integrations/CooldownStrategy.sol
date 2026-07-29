@@ -32,12 +32,14 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
     /// @notice Constructor
     /// @param _asset The address of the borrow token
     /// @param _lender The address of the Lender contract
+    /// @param _exitRouter The address of the exit router
     /// @param _name The name of the strategy
     constructor(
         address _asset,
         address _lender,
+        address _exitRouter,
         string memory _name
-    ) FlexLenderStrategy(_asset, _lender, _name) {
+    ) FlexLenderStrategy(_asset, _lender, _exitRouter, _name) {
         // Set the collateral token
         COLLATERAL = IERC4626(LENDER.TROVE_MANAGER().collateral_token());
     }

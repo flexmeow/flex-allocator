@@ -13,6 +13,8 @@ interface IStrategy is IBaseHealthCheck {
 
     function LENDER() external view returns (ILender);
 
+    function EXIT_ROUTER() external view returns (address);
+
     // ============================================================================================
     // Storage
     // ============================================================================================

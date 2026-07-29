@@ -36,11 +36,13 @@ contract InfinifiFlexLenderStrategy is CooldownFlexLenderStrategy {
 
     /// @notice Constructor
     /// @param _lender The address of the Lender contract
+    /// @param _exitRouter The address of the exit router
     /// @param _name The name of the strategy
     constructor(
         address _lender,
+        address _exitRouter,
         string memory _name
-    ) CooldownFlexLenderStrategy(USDC, _lender, _name) {
+    ) CooldownFlexLenderStrategy(USDC, _lender, _exitRouter, _name) {
         // Set the receipt token (iUSD) and make sure the collateral (siUSD) unwraps to it
         IUSD = ERC20(COLLATERAL.asset());
         require(address(IUSD) == 0x48f9e38f3070AD8945DFEae3FA70987722E3D89c, "!iusd");

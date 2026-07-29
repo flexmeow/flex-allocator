@@ -10,6 +10,29 @@ import {FlexLenderStrategy as Strategy} from "./Strategy.sol";
 /// @notice Deploys new Flex Lender Strategy vaults
 contract StrategyFactory {
 
+    // ============================================================================================
+    // Constants
+    // ============================================================================================
+
+    /// @notice Exit router every deployed Strategy uses
+    address public immutable EXIT_ROUTER;
+
+    // ============================================================================================
+    // Constructor
+    // ============================================================================================
+
+    /// @notice Constructor
+    /// @param _exitRouter The address of the exit router
+    constructor(
+        address _exitRouter
+    ) {
+        EXIT_ROUTER = _exitRouter;
+    }
+
+    // ============================================================================================
+    // Deploy
+    // ============================================================================================
+
     /// @notice Deploy a new Flex Lender Strategy contract
     /// @param _asset The address of the borrow token
     /// @param _lender The address of the Lender contract
@@ -27,7 +50,7 @@ contract StrategyFactory {
         string calldata _name
     ) external returns (address) {
         // Deploy the Strategy contract
-        IStrategy _strategy = IStrategy(address(new Strategy(_asset, _lender, _name)));
+        IStrategy _strategy = IStrategy(address(new Strategy(_asset, _lender, EXIT_ROUTER, _name)));
 
         // Configure Strategy roles
         _strategy.setKeeper(_keeper);

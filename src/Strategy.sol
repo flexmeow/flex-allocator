@@ -33,6 +33,9 @@ contract FlexLenderStrategy is BaseHealthCheck {
     // Constants
     // ============================================================================================
 
+    /// @notice Exit router allowed to set the proceeds receiver
+    address public immutable EXIT_ROUTER;
+
     /// @notice Lender contract
     ILender public immutable LENDER;
 
@@ -67,15 +70,20 @@ contract FlexLenderStrategy is BaseHealthCheck {
     /// @notice Constructor
     /// @param _asset The address of the borrow token
     /// @param _lender The address of the Lender contract
+    /// @param _exitRouter The address of the exit router
     /// @param _name The name of the strategy
     constructor(
         address _asset,
         address _lender,
+        address _exitRouter,
         string memory _name
     ) BaseHealthCheck(_asset, _name) {
         // Set Lender contract
         LENDER = ILender(_lender);
         require(LENDER.asset() == _asset, "!asset");
+
+        // Set the exit router
+        EXIT_ROUTER = _exitRouter;
 
         // Set Dutch Desk and Auction contracts
         DUTCH_DESK = IDutchDesk(LENDER.TROVE_MANAGER().dutch_desk());
@@ -195,12 +203,14 @@ contract FlexLenderStrategy is BaseHealthCheck {
     // ============================================================================================
 
     /// @notice Set the withdrawal receiver for the current transaction
+    /// @dev Only callable by the exit router
     /// @dev The entire withdrawal is sent directly to the receiver, idle liquidity atomically and
     ///      the rest via a redemption auction, and is accounted as a loss on the withdrawal
     /// @param _receiver The address to receive the withdrawal
     function setProceedsReceiver(
         address _receiver
     ) external {
+        require(msg.sender == EXIT_ROUTER, "!exitRouter");
         _proceedsReceiver = _receiver;
     }
 

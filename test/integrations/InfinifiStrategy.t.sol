@@ -51,7 +51,7 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
 
     /// @dev Deploy the InfiniFi strategy wrapping the local market's Lender
     function _deployStrategy() internal override returns (IStrategy) {
-        infinifiStrategy = new InfinifiFlexLenderStrategy(address(LENDER), "Flex siUSD/USDC Lender");
+        infinifiStrategy = new InfinifiFlexLenderStrategy(address(LENDER), address(exitRouter), "Flex siUSD/USDC Lender");
         cooldownStrategy = ICooldownStrategy(address(infinifiStrategy));
         IStrategy _strategy = IStrategy(address(infinifiStrategy));
         _strategy.setKeeper(keeper);
@@ -64,7 +64,7 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
     // Tests
     // ============================================================================================
 
-    function test_setup() public {
+    function test_setup() public view {
         assertEq(address(infinifiStrategy.COLLATERAL()), SIUSD, "E0");
         assertEq(address(infinifiStrategy.IUSD()), IUSD, "E1");
         assertEq(infinifiStrategy.pendingRedemptions(), 0, "E2");
@@ -76,7 +76,7 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
         // The live yvUSD/USDC Lender's collateral does not unwrap to iUSD
         address _yvusdLender = 0xA967FcDb8a2bEF38caaB6131169c9D45be550Db0;
         vm.expectRevert("!iusd");
-        new InfinifiFlexLenderStrategy(_yvusdLender, "nope");
+        new InfinifiFlexLenderStrategy(_yvusdLender, address(exitRouter), "nope");
     }
 
     function test_initiateCooldown(

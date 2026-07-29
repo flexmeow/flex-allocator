@@ -40,7 +40,7 @@ contract LidoStrategyTests is CooldownStrategyTests {
 
     /// @dev Deploy the Lido strategy wrapping the local market's Lender
     function _deployStrategy() internal override returns (IStrategy) {
-        lidoStrategy = new LidoFlexLenderStrategy(address(LENDER), "Flex wstETH/WETH Lender");
+        lidoStrategy = new LidoFlexLenderStrategy(address(LENDER), address(exitRouter), "Flex wstETH/WETH Lender");
         cooldownStrategy = ICooldownStrategy(address(lidoStrategy));
         IStrategy _strategy = IStrategy(address(lidoStrategy));
         _strategy.setKeeper(keeper);
@@ -53,7 +53,7 @@ contract LidoStrategyTests is CooldownStrategyTests {
     // Tests
     // ============================================================================================
 
-    function test_setup() public {
+    function test_setup() public view {
         assertEq(address(lidoStrategy.COLLATERAL()), WSTETH, "E0");
         assertEq(address(lidoStrategy.STETH()), STETH, "E1");
         assertEq(lidoStrategy.pendingRedemptions(), 0, "E2");
@@ -65,7 +65,7 @@ contract LidoStrategyTests is CooldownStrategyTests {
         // The live yvUSD/USDC Lender's asset is not WETH
         address _yvusdLender = 0xA967FcDb8a2bEF38caaB6131169c9D45be550Db0;
         vm.expectRevert("!asset");
-        new LidoFlexLenderStrategy(_yvusdLender, "nope");
+        new LidoFlexLenderStrategy(_yvusdLender, address(exitRouter), "nope");
     }
 
     function test_initiateCooldown_accumulates(

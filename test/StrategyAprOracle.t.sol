@@ -14,7 +14,7 @@ contract StrategyAprOracleTests is Base {
         aprOracle = new StrategyAprOracle();
     }
 
-    function test_setup() public {
+    function test_setup() public view {
         assertEq(aprOracle.name(), "Flex Lender Strategy APR Oracle", "E0");
         assertEq(address(strategy.LENDER()), address(LENDER), "E1");
     }

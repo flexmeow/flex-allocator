@@ -31,7 +31,7 @@ contract FxSaveStrategyTests is CooldownStrategyTests {
 
     /// @dev Deploy the fxSAVE strategy wrapping the local market's Lender
     function _deployStrategy() internal override returns (IStrategy) {
-        fxSaveStrategy = new FxSaveFlexLenderStrategy(address(LENDER), "Flex fxSAVE/USDC Lender");
+        fxSaveStrategy = new FxSaveFlexLenderStrategy(address(LENDER), address(exitRouter), "Flex fxSAVE/USDC Lender");
         cooldownStrategy = ICooldownStrategy(address(fxSaveStrategy));
         IStrategy _strategy = IStrategy(address(fxSaveStrategy));
         _strategy.setKeeper(keeper);
@@ -44,7 +44,7 @@ contract FxSaveStrategyTests is CooldownStrategyTests {
     // Tests
     // ============================================================================================
 
-    function test_setup() public {
+    function test_setup() public view {
         assertEq(address(fxSaveStrategy.COLLATERAL()), FXSAVE, "E0");
         assertEq(address(fxSaveStrategy.FXBASE()), FXBASE, "E1");
         assertEq(fxSaveStrategy.pendingRedemptions(), 0, "E2");
@@ -56,7 +56,7 @@ contract FxSaveStrategyTests is CooldownStrategyTests {
         // The live yvUSD/USDC Lender's collateral does not unwrap to fxBASE
         address _yvusdLender = 0xA967FcDb8a2bEF38caaB6131169c9D45be550Db0;
         vm.expectRevert("!fxbase");
-        new FxSaveFlexLenderStrategy(_yvusdLender, "nope");
+        new FxSaveFlexLenderStrategy(_yvusdLender, address(exitRouter), "nope");
     }
 
     function test_initiateCooldown_resetsUnlockClock(

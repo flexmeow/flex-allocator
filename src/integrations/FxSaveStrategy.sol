@@ -47,11 +47,13 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
 
     /// @notice Constructor
     /// @param _lender The address of the Lender contract
+    /// @param _exitRouter The address of the exit router
     /// @param _name The name of the strategy
     constructor(
         address _lender,
+        address _exitRouter,
         string memory _name
-    ) CooldownFlexLenderStrategy(USDC, _lender, _name) {
+    ) CooldownFlexLenderStrategy(USDC, _lender, _exitRouter, _name) {
         // Make sure the collateral (fxSAVE) unwraps to fxBASE
         require(COLLATERAL.asset() == address(FXBASE), "!fxbase");
 

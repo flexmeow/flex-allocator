@@ -4,6 +4,8 @@ pragma solidity 0.8.30;
 import {IVault} from "../script/interfaces/IVault.sol";
 import {IVaultFactory} from "../script/interfaces/IVaultFactory.sol";
 
+import {FlexExitRouter} from "../src/periphery/ExitRouter.sol";
+
 import "./Base.sol";
 
 contract StrategyTests is Base {
@@ -15,7 +17,7 @@ contract StrategyTests is Base {
         Base.setUp();
     }
 
-    function test_setupStrategyOK() public {
+    function test_setupStrategyOK() public view {
         assertEq(strategy.asset(), address(asset));
         assertEq(strategy.management(), management);
         assertEq(strategy.performanceFeeRecipient(), performanceFeeRecipient);
@@ -450,158 +452,15 @@ contract StrategyTests is Base {
         strategy.deployIdleFunds(_amount);
     }
 
-    function test_setProceedsReceiver_widensWithdrawLimit(
+    // ============================================================================================
+    // Exit router
+    // ============================================================================================
+
+    /// @dev Deploy a V3 vault holding the strategy, and allocate `_amount` of `user` deposits to it
+    function _setUpVault(
         uint256 _amount
-    ) public {
-        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
-
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        // Drain the Lender's idle completely
-        openTrove(address(77), asset.balanceOf(address(LENDER)));
-
-        // Without a receiver the limit is capped by the Lender's idle
-        assertEq(strategy.availableWithdrawLimit(user), 0, "E0");
-
-        // Setting the receiver removes the limit
-        strategy.setProceedsReceiver(user);
-        assertEq(strategy.availableWithdrawLimit(user), type(uint256).max, "E1");
-
-        // Setting the zero address disarms
-        strategy.setProceedsReceiver(address(0));
-        assertEq(strategy.availableWithdrawLimit(user), 0, "E2");
-    }
-
-    function test_redeem_proceedsReceiver_kicksAuctionToReceiver(
-        uint256 _amount
-    ) public {
-        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
-
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        // Drain the Lender's idle completely
-        openTrove(address(77), asset.balanceOf(address(LENDER)));
-
-        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
-        IAuction _auction = IAuction(_dutchDesk.auction());
-        uint256 _nonceBefore = _dutchDesk.nonce();
-
-        // Without a receiver the withdrawal is capped by the Lender's idle
-        uint256 _shares = strategy.balanceOf(user);
-        vm.startPrank(user);
-        vm.expectRevert("ERC4626: redeem more than max");
-        strategy.redeem(_shares, user, user);
-
-        // Set the receiver and redeem the full position
-        strategy.setProceedsReceiver(user);
-        strategy.redeem(_shares, user, user);
-        vm.stopPrank();
-
-        // The position is closed and an auction was kicked with the user as receiver
-        assertEq(strategy.balanceOf(user), 0, "E0");
-        assertEq(_dutchDesk.nonce(), _nonceBefore + 1, "E1");
-        uint256 _auctionId = _nonceBefore;
-        assertTrue(_auction.is_active(_auctionId), "E2");
-        assertEq(_auction.auctions(_auctionId).receiver, user, "E3");
-
-        // Take the auction -- the proceeds flow directly to the user
-        uint256 _balanceBefore = asset.balanceOf(user);
-        takeAuction(_auctionId, _auction);
-        assertApproxEqRel(asset.balanceOf(user) - _balanceBefore, _amount, 1e16, "E4"); // 1%
-    }
-
-    function test_setProceedsReceiver_lastWriteWins(
-        uint256 _amount
-    ) public {
-        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
-
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        // Drain the Lender's idle completely
-        openTrove(address(77), asset.balanceOf(address(LENDER)));
-
-        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
-        IAuction _auction = IAuction(_dutchDesk.auction());
-        uint256 _nonceBefore = _dutchDesk.nonce();
-
-        // An attacker sets themselves as receiver, but the user overwrites it before withdrawing
-        address _attacker = address(666);
-        vm.prank(_attacker);
-        strategy.setProceedsReceiver(_attacker);
-
-        vm.startPrank(user);
-        strategy.setProceedsReceiver(user);
-        strategy.redeem(strategy.balanceOf(user), user, user);
-        vm.stopPrank();
-
-        // The auction was kicked with the user as receiver -- the last write won
-        assertEq(_auction.auctions(_nonceBefore).receiver, user, "E0");
-    }
-
-    /// forge-config: default.isolate = true
-    function test_proceedsReceiver_clearedBetweenTransactions() public {
-        strategy.setProceedsReceiver(user);
-
-        // Transient storage clears at the transaction boundary, so the limit is idle-bound again
-        assertLt(strategy.availableWithdrawLimit(user), type(uint256).max, "E0");
-    }
-
-    /// forge-config: default.isolate = true
-    function test_proceedsReceiver_setInPriorTxHasNoEffect(
-        uint256 _amount
-    ) public {
-        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
-
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        // Drain the Lender's idle completely
-        openTrove(address(77), asset.balanceOf(address(LENDER)));
-
-        // An attacker sets themselves as receiver in their own transaction
-        address _attacker = address(666);
-        vm.prank(_attacker);
-        strategy.setProceedsReceiver(_attacker);
-
-        // The user's withdrawal in a later transaction is unaffected: the receiver is cleared,
-        // so the over-idle redeem reverts instead of routing anything to the attacker
-        uint256 _shares = strategy.balanceOf(user);
-        vm.prank(user);
-        vm.expectRevert("ERC4626: redeem more than max");
-        strategy.redeem(_shares, user, user);
-    }
-
-    // The transaction is the trust boundary: a receiver set earlier in the SAME tx (e.g. a batched
-    // multicall) applies to any withdrawal after it, so always set it right before withdrawing
-    function test_proceedsReceiver_sameTxSetRedirectsOtherWithdrawals(
-        uint256 _amount
-    ) public {
-        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
-
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        // An attacker sets themselves as receiver earlier in the same transaction
-        address _attacker = address(666);
-        vm.prank(_attacker);
-        strategy.setProceedsReceiver(_attacker);
-
-        // The user's idle-covered withdrawal in the same tx is delivered to the attacker
-        uint256 _shares = strategy.balanceOf(user);
-        uint256 _userBefore = asset.balanceOf(user);
-        uint256 _attackerBefore = asset.balanceOf(_attacker);
-        vm.prank(user);
-        strategy.redeem(_shares, user, user);
-
-        assertEq(asset.balanceOf(user), _userBefore, "E0");
-        assertApproxEqAbs(asset.balanceOf(_attacker) - _attackerBefore, _amount, 1, "E1");
-    }
-
-    function test_redeem_proceedsReceiver_throughVault(
-        uint256 _amount
-    ) public {
-        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
-
-        // Deploy a V3 vault and wire the strategy to it
-        IVault _vault = IVault(VAULT_FACTORY.deploy_new_vault(address(asset), "Flex USDC yVault", "yvFlexUSDC", address(this), 7 days));
+    ) internal returns (IVault _vault) {
+        _vault = IVault(VAULT_FACTORY.deploy_new_vault(address(asset), "Flex USDC yVault", "yvFlexUSDC", address(this), 7 days));
         _vault.set_role(address(this), 16383);
         _vault.set_deposit_limit(type(uint256).max);
         _vault.add_strategy(address(strategy));
@@ -616,6 +475,25 @@ contract StrategyTests is Base {
         _vault.deposit(_amount, user);
         vm.stopPrank();
         _vault.update_debt(address(strategy), _amount);
+    }
+
+    function test_setProceedsReceiver_notRouter_reverts(
+        address _caller,
+        address _receiver
+    ) public {
+        vm.assume(_caller != address(exitRouter));
+
+        vm.prank(_caller);
+        vm.expectRevert("!exitRouter");
+        strategy.setProceedsReceiver(_receiver);
+    }
+
+    function test_exitRouter_redeem(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        IVault _vault = _setUpVault(_amount);
 
         // Drain the Lender's idle completely
         openTrove(address(77), asset.balanceOf(address(LENDER)));
@@ -624,13 +502,18 @@ contract StrategyTests is Base {
         IAuction _auction = IAuction(_dutchDesk.auction());
         uint256 _nonceBefore = _dutchDesk.nonce();
 
-        // Exit through the vault: set the receiver, then redeem allowing full loss
+        // Without the router the withdrawal is capped by the Lender's idle, which is now zero
         uint256 _shares = _vault.balanceOf(user);
-        address[] memory _strategies = new address[](1);
-        _strategies[0] = address(strategy);
+        vm.prank(user);
+        vm.expectRevert();
+        _vault.redeem(_shares, user, user, MAX_BPS);
+
+        // Through the router the full position is withdrawable
+        IStrategy[] memory _strategies = new IStrategy[](1);
+        _strategies[0] = strategy;
         vm.startPrank(user);
-        strategy.setProceedsReceiver(user);
-        _vault.redeem(_shares, user, user, MAX_BPS, _strategies);
+        ERC20(address(_vault)).approve(address(exitRouter), _shares);
+        exitRouter.redeem(address(_vault), _shares, user, user, MAX_BPS, _strategies);
         vm.stopPrank();
 
         // The vault position is closed and an auction was kicked with the user as receiver
@@ -643,6 +526,136 @@ contract StrategyTests is Base {
         uint256 _balanceBefore = asset.balanceOf(user);
         takeAuction(_auctionId, _auction);
         assertApproxEqRel(asset.balanceOf(user) - _balanceBefore, _amount, 1e16, "E3"); // 1%
+    }
+
+    function test_exitRouter_redeem_clearsReceiver(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        IVault _vault = _setUpVault(_amount);
+
+        // Redeem half through the router
+        uint256 _shares = _vault.balanceOf(user) / 2;
+        IStrategy[] memory _strategies = new IStrategy[](1);
+        _strategies[0] = strategy;
+        vm.startPrank(user);
+        ERC20(address(_vault)).approve(address(exitRouter), _shares);
+        exitRouter.redeem(address(_vault), _shares, user, user, MAX_BPS, _strategies);
+        vm.stopPrank();
+
+        // The router cleared the receiver before returning, so the limit is idle-bound again
+        assertLt(strategy.availableWithdrawLimit(user), type(uint256).max, "E0");
+    }
+
+    // The receiver can only be set by the router, which burns the setter's shares in the same call, so a
+    // debt manager cannot redirect the strategy's position to itself
+    function test_exitRouter_debtManagerCannotDivert(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        IVault _vault = _setUpVault(_amount);
+
+        // The debt manager cannot arm the strategy
+        address _debtManager = address(this);
+        vm.prank(_debtManager);
+        vm.expectRevert("!exitRouter");
+        strategy.setProceedsReceiver(_debtManager);
+
+        // So pulling the whole position can only move the Lender's idle, which is what the strategy
+        // holds anyway -- nothing is diverted and the vault keeps the value
+        uint256 _managerBefore = asset.balanceOf(_debtManager);
+        _vault.update_debt(address(strategy), 0);
+
+        assertEq(asset.balanceOf(_debtManager), _managerBefore, "E0");
+        assertApproxEqAbs(asset.balanceOf(address(_vault)), _amount, 1, "E1");
+    }
+
+    // The router clears the receiver before returning, so a debt manager cannot arm the strategy with a
+    // dust redemption and then consume the armed receiver later in the same transaction
+    function test_exitRouter_sequencedDivert_reverts(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        IVault _vault = _setUpVault(_amount);
+
+        // Give the attacker a dust position and the debt manager role
+        SequencedExitAttacker _attacker = new SequencedExitAttacker();
+        uint256 _dust = _amount / 100;
+        vm.prank(user);
+        ERC20(address(_vault)).transfer(address(_attacker), _dust);
+        _vault.set_role(address(_attacker), 16_383);
+
+        _attacker.attack(exitRouter, _vault, strategy, _dust);
+
+        // The attacker only got its own dust position, the rest of the position went to the vault
+        assertApproxEqRel(asset.balanceOf(address(_attacker)), _dust, 1e16, "E0"); // 1%
+        assertApproxEqRel(asset.balanceOf(address(_vault)), _amount - _dust, 1e16, "E1"); // 1%
+    }
+
+    function test_exitRouter_redeem_withoutAllowance_reverts(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        IVault _vault = _setUpVault(_amount);
+
+        IStrategy[] memory _strategies = new IStrategy[](1);
+        _strategies[0] = strategy;
+
+        // A third party cannot redeem the user's shares without an allowance
+        uint256 _shares = _vault.balanceOf(user);
+        address _thirdParty = address(777);
+        vm.prank(_thirdParty);
+        vm.expectRevert("insufficient allowance");
+        exitRouter.redeem(address(_vault), _shares, _thirdParty, user, MAX_BPS, _strategies);
+    }
+
+    function test_exitRouter_redeem_delegated(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        IVault _vault = _setUpVault(_amount);
+
+        IStrategy[] memory _strategies = new IStrategy[](1);
+        _strategies[0] = strategy;
+
+        // The user approves the router, so a third party can exit on their behalf
+        uint256 _shares = _vault.balanceOf(user);
+        vm.prank(user);
+        ERC20(address(_vault)).approve(address(exitRouter), _shares);
+
+        uint256 _balanceBefore = asset.balanceOf(user);
+        vm.prank(address(777));
+        exitRouter.redeem(address(_vault), _shares, user, user, MAX_BPS, _strategies);
+
+        assertEq(_vault.balanceOf(user), 0, "E0");
+        assertApproxEqRel(asset.balanceOf(user) - _balanceBefore, _amount, 1e16, "E1"); // 1%
+    }
+
+}
+
+/// @dev Arms a strategy through the router with a dust position, then tries to consume the armed
+///      receiver by pulling the strategy's whole position in the same transaction
+contract SequencedExitAttacker {
+
+    function attack(
+        FlexExitRouter _router,
+        IVault _vault,
+        IStrategy _strategy,
+        uint256 _shares
+    ) external {
+        // Redeem our own dust position through the router, which arms the strategy
+        ERC20(address(_vault)).approve(address(_router), _shares);
+        IStrategy[] memory _strategies = new IStrategy[](1);
+        _strategies[0] = _strategy;
+        _router.redeem(address(_vault), _shares, address(this), address(this), 10_000, _strategies);
+
+        // Then try to divert the rest of the position to ourselves
+        _vault.update_debt(address(_strategy), 0);
     }
 
 }

@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import {StrategyFactory} from "../src/StrategyFactory.sol";
+import {FlexExitRouter} from "../src/periphery/ExitRouter.sol";
 
 import "forge-std/Script.sol";
 
@@ -16,6 +17,7 @@ contract DeployStrategyFactory is Script {
     address public deployerAddress;
 
     // Deployed contracts
+    FlexExitRouter public exitRouter;
     StrategyFactory public strategyFactory;
 
     function run() public {
@@ -31,13 +33,16 @@ contract DeployStrategyFactory is Script {
 
         vm.startBroadcast(_pk);
 
-        // Deploy the StrategyFactory
-        strategyFactory = new StrategyFactory();
+        // Deploy the ExitRouter and the StrategyFactory
+        exitRouter = new FlexExitRouter();
+        strategyFactory = new StrategyFactory(address(exitRouter));
 
         if (isTest) {
+            vm.label({account: address(exitRouter), newLabel: "ExitRouter"});
             vm.label({account: address(strategyFactory), newLabel: "StrategyFactory"});
         } else {
             console2.log("---------------------------------");
+            console2.log("Exit Router: ", address(exitRouter));
             console2.log("Strategy Factory: ", address(strategyFactory));
             console2.log("---------------------------------");
         }
