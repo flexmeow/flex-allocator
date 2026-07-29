@@ -107,7 +107,7 @@ contract FlexLenderStrategy is BaseHealthCheck {
     function availableDepositLimit(
         address _owner
     ) public view override returns (uint256) {
-        return openDeposits || allowed[_owner] ? LENDER.availableDepositLimit(address(this)) : 0;
+        return openDeposits || allowed[_owner] ? LENDER.maxDeposit(address(this)) : 0;
     }
 
     /// @inheritdoc BaseStrategy
