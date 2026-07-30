@@ -144,7 +144,9 @@ contract FlexLenderStrategy is BaseHealthCheck {
         uint256 _nextAuctionId = DUTCH_DESK.nonce();
 
         // Cap the amount to our max redeem
-        uint256 _shares = Math.min(LENDER.previewWithdraw(_amount), LENDER.maxRedeem(address(this)));
+        uint256 _shares = _amount == type(uint256).max
+            ? LENDER.maxRedeem(address(this))
+            : Math.min(LENDER.previewWithdraw(_amount), LENDER.maxRedeem(address(this)));
 
         // Withdraw and potentially trigger a collateral redemption
         _amount = _shares > 0 ? LENDER.redeem(_shares, address(this), address(this)) : 0;
@@ -255,7 +257,9 @@ contract FlexLenderStrategy is BaseHealthCheck {
         uint256 _amount
     ) internal override {
         // Cap the amount to our max redeem
-        uint256 _shares = Math.min(LENDER.previewWithdraw(_amount), LENDER.maxRedeem(address(this)));
+        uint256 _shares = _amount == type(uint256).max
+            ? LENDER.maxRedeem(address(this))
+            : Math.min(LENDER.previewWithdraw(_amount), LENDER.maxRedeem(address(this)));
 
         // Withdraw everything we can, trigger a collateral redemption if needed
         LENDER.redeem(_shares, address(this), address(this));

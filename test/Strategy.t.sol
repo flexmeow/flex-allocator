@@ -10,6 +10,8 @@ import "./Base.sol";
 
 contract StrategyTests is Base {
 
+    using stdStorage for StdStorage;
+
     // 3.0.4 Vault Factory
     IVaultFactory public constant VAULT_FACTORY = IVaultFactory(0x770D0d1Fb036483Ed4AbB6d53c1C88fb277D812F);
 
@@ -212,6 +214,44 @@ contract StrategyTests is Base {
         strategy.redeem(_amount, user, user);
 
         assertGe(asset.balanceOf(user), balanceBefore + _amount, "!final balance");
+    }
+
+    function test_forceFreeFunds_maxUint_lowSharePrice(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drop the Lender's share price below one, so converting a max amount overflows
+        _dropLenderSharePrice();
+
+        // Freeing everything still works, as the amount is never converted
+        vm.prank(management);
+        strategy.forceFreeFunds(type(uint256).max, 0);
+
+        assertEq(LENDER.balanceOf(address(strategy)), 0, "E0");
+        assertGt(asset.balanceOf(address(strategy)), 0, "E1");
+    }
+
+    function test_emergencyWithdraw_maxUint_lowSharePrice(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drop the Lender's share price below one, so converting a max amount overflows
+        _dropLenderSharePrice();
+
+        // Withdrawing everything still works, as the amount is never converted
+        vm.startPrank(management);
+        strategy.shutdownStrategy();
+        strategy.emergencyWithdraw(type(uint256).max);
+        vm.stopPrank();
+
+        assertEq(LENDER.balanceOf(address(strategy)), 0, "E0");
+        assertGt(asset.balanceOf(address(strategy)), 0, "E1");
     }
 
     function test_forceFreeFunds_idleOnly(
@@ -494,6 +534,15 @@ contract StrategyTests is Base {
     // ============================================================================================
     // Exit router
     // ============================================================================================
+
+    /// @dev Halve the Lender's total assets, putting its share price below one. Converting a max amount
+    ///      then overflows, since it scales by `totalSupply / totalAssets`
+    function _dropLenderSharePrice() internal {
+        stdstore.target(address(LENDER)).sig("totalAssets()").checked_write(LENDER.totalSupply() / 2);
+
+        vm.expectRevert();
+        LENDER.previewWithdraw(type(uint256).max);
+    }
 
     /// @dev Deploy a V3 vault holding the strategy, and allocate `_amount` of `user` deposits to it
     function _setUpVault(
