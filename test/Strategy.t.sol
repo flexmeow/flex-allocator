@@ -573,7 +573,24 @@ contract StrategyTests is Base {
 
         vm.prank(_caller);
         vm.expectRevert("!exitRouter");
-        strategy.setProceedsReceiver(_receiver);
+        strategy.setProceedsReceiver(_receiver, address(0));
+    }
+
+    // The router calls the vault while the receiver is set, so an attacker supplying their own contract
+    // as the vault would get to run code with the receiver pointed at themselves
+    function test_exitRouter_redeem_unallowedVault_reverts(
+        address _vault,
+        uint256 _shares,
+        address _receiver,
+        uint256 _maxLoss
+    ) public {
+        vm.assume(!strategy.allowed(_vault));
+
+        IStrategy[] memory _strategies = new IStrategy[](1);
+        _strategies[0] = strategy;
+
+        vm.expectRevert("!vault");
+        exitRouter.redeem(_vault, _shares, _receiver, address(this), _maxLoss, _strategies);
     }
 
     function test_exitRouter_redeem(
@@ -649,7 +666,7 @@ contract StrategyTests is Base {
         address _debtManager = address(this);
         vm.prank(_debtManager);
         vm.expectRevert("!exitRouter");
-        strategy.setProceedsReceiver(_debtManager);
+        strategy.setProceedsReceiver(_debtManager, address(_vault));
 
         // So pulling the whole position can only move the Lender's idle, which is what the strategy
         // holds anyway -- nothing is diverted and the vault keeps the value

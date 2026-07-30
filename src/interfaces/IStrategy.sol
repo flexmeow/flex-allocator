@@ -66,7 +66,8 @@ interface IStrategy is IBaseHealthCheck {
     // ============================================================================================
 
     function setProceedsReceiver(
-        address _receiver
+        address _receiver,
+        address _vault
     ) external;
 
 }

@@ -30,14 +30,14 @@ contract FlexExitRouter {
         uint256 _maxLoss,
         IStrategy[] calldata _strategies
     ) external returns (uint256 _assets) {
-        // Set the receiver
-        _setProceedsReceiver(_strategies, _receiver);
+        // Set the receiver. The strategies reject a vault they are not allowed to be held by
+        _setProceedsReceiver(_strategies, _receiver, _vault);
 
         // Redeem the shares from the vault
         _assets = IAllocatorVault(_vault).redeem(_shares, _receiver, _owner, _maxLoss);
 
         // Clear the receiver
-        _setProceedsReceiver(_strategies, address(0));
+        _setProceedsReceiver(_strategies, address(0), _vault);
     }
 
     // ============================================================================================
@@ -47,10 +47,11 @@ contract FlexExitRouter {
     /// @dev Set the proceeds receiver on every given strategy
     function _setProceedsReceiver(
         IStrategy[] calldata _strategies,
-        address _receiver
+        address _receiver,
+        address _vault
     ) internal {
         for (uint256 i; i < _strategies.length; ++i) {
-            _strategies[i].setProceedsReceiver(_receiver);
+            _strategies[i].setProceedsReceiver(_receiver, _vault);
         }
     }
 

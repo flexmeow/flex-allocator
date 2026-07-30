@@ -213,14 +213,17 @@ contract FlexLenderStrategy is BaseHealthCheck {
     // ============================================================================================
 
     /// @notice Set the withdrawal receiver for the current transaction
-    /// @dev Only callable by the exit router
+    /// @dev Only callable by the Exit Router, and only for a vault that's allowed to hold this strategy
     /// @dev The entire withdrawal is sent directly to the receiver, idle liquidity atomically and
     ///      the rest via a redemption auction, and is accounted as a loss on the withdrawal
     /// @param _receiver The address to receive the withdrawal
+    /// @param _vault The vault being redeemed from
     function setProceedsReceiver(
-        address _receiver
+        address _receiver,
+        address _vault
     ) external {
         require(msg.sender == EXIT_ROUTER, "!exitRouter");
+        require(allowed[_vault], "!vault");
         _proceedsReceiver = _receiver;
     }
 
