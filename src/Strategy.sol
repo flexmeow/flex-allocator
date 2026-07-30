@@ -130,6 +130,8 @@ contract FlexLenderStrategy is BaseHealthCheck {
     /// @dev Could trigger a collateral redemption, meaning assets will arrive asynchronously
     ///      and may create a loss on the collateral/asset conversion
     /// @dev Cannot be called while there is an active auction
+    /// @dev Anyone can deposit and redeploy the freed asset back into the Lender, so it should be
+    ///      reallocated in the same transaction
     /// @param _amount The amount of asset to free
     /// @param _minOut Minimum amount of asset delivered atomically
     /// @return The actual amount of asset freed
