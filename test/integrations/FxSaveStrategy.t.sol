@@ -82,7 +82,7 @@ contract FxSaveStrategyTests is CooldownStrategyTests {
         assertApproxEqRel(fxSaveStrategy.pendingRedemptions(), _amount, 1e16, "E3"); // 1%
 
         // The second request reset the unlock clock, so the claim reverts
-        vm.prank(keeper);
+        vm.prank(management);
         vm.expectRevert();
         fxSaveStrategy.claimCooldown();
     }
@@ -101,7 +101,7 @@ contract FxSaveStrategyTests is CooldownStrategyTests {
 
         // Wait out the cooldown and claim, receiving a mix of USDC and fxUSD
         skip(IFxUSDBasePool(FXBASE).redeemCoolDownPeriod());
-        vm.prank(keeper);
+        vm.prank(management);
         (uint256 _assetsOut, uint256 _fxusdOut) = fxSaveStrategy.claimCooldown();
 
         // The claim is worth ~ the queued amount, valuing fxUSD at $1
@@ -138,9 +138,9 @@ contract FxSaveStrategyTests is CooldownStrategyTests {
     function test_claimCooldown_wrongCaller(
         address _wrongCaller
     ) public {
-        vm.assume(_wrongCaller != management && _wrongCaller != keeper);
+        vm.assume(_wrongCaller != management);
         vm.prank(_wrongCaller);
-        vm.expectRevert("!keeper");
+        vm.expectRevert("!management");
         fxSaveStrategy.claimCooldown();
     }
 

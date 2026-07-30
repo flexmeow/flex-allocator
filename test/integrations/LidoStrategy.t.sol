@@ -109,7 +109,7 @@ contract LidoStrategyTests is CooldownStrategyTests {
 
         // Claim the withdrawal
         uint256 _balanceBefore = asset.balanceOf(address(strategy));
-        vm.prank(keeper);
+        vm.prank(management);
         uint256 _claimed = lidoStrategy.claimCooldown(_requestId);
 
         assertEq(asset.balanceOf(address(strategy)), _balanceBefore + _claimed, "E1");
@@ -121,7 +121,7 @@ contract LidoStrategyTests is CooldownStrategyTests {
     function test_claimCooldown_unknownRequest_reverts(
         uint256 _requestId
     ) public {
-        vm.prank(keeper);
+        vm.prank(management);
         vm.expectRevert("!request");
         lidoStrategy.claimCooldown(_requestId);
     }
@@ -129,9 +129,9 @@ contract LidoStrategyTests is CooldownStrategyTests {
     function test_claimCooldown_wrongCaller(
         address _wrongCaller
     ) public {
-        vm.assume(_wrongCaller != management && _wrongCaller != keeper);
+        vm.assume(_wrongCaller != management);
         vm.prank(_wrongCaller);
-        vm.expectRevert("!keeper");
+        vm.expectRevert("!management");
         lidoStrategy.claimCooldown(1);
     }
 

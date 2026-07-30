@@ -85,11 +85,11 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
     }
 
     /// @notice Claim the queued redemption from fxBASE once the cooldown passed
-    /// @dev Only callable by keepers
+    /// @dev Only callable by management
     /// @dev Pays out the whole queued amount as a mix of USDC and fxUSD
     /// @return _assetsOut The amount of asset received
     /// @return _fxusdOut The amount of fxUSD received
-    function claimCooldown() external onlyKeepers returns (uint256 _assetsOut, uint256 _fxusdOut) {
+    function claimCooldown() external onlyManagement returns (uint256 _assetsOut, uint256 _fxusdOut) {
         require(pendingRedemptions > 0, "!pending");
 
         // The claim always empties the queue

@@ -85,9 +85,9 @@ contract InfinifiFlexLenderStrategy is CooldownFlexLenderStrategy {
     }
 
     /// @notice Claim queued redemptions from InfiniFi
-    /// @dev Only callable by keepers
+    /// @dev Only callable by management
     /// @return _assets The amount of asset claimed
-    function claimCooldown() external onlyKeepers returns (uint256 _assets) {
+    function claimCooldown() external onlyManagement returns (uint256 _assets) {
         require(_redeemController().userPendingClaims(address(this)) > 0, "!claim");
 
         uint256 _preBalance = asset.balanceOf(address(this));

@@ -98,12 +98,12 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     }
 
     /// @notice Claim a finalized withdrawal request from Lido
-    /// @dev Only callable by keepers
+    /// @dev Only callable by management
     /// @param _requestId The withdrawal request id to claim
     /// @return _assets The amount of asset claimed
     function claimCooldown(
         uint256 _requestId
-    ) external onlyKeepers returns (uint256 _assets) {
+    ) external onlyManagement returns (uint256 _assets) {
         // Make sure the request is one of ours
         uint256 _queued = requestAmounts[_requestId];
         require(_queued > 0, "!request");

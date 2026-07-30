@@ -120,7 +120,7 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
 
         // Nothing was queued -- nothing to claim
         if (_pending == 0) {
-            vm.prank(keeper);
+            vm.prank(management);
             vm.expectRevert("!claim");
             infinifiStrategy.claimCooldown();
             return;
@@ -136,7 +136,7 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
 
         // Claim the queued redemption
         uint256 _balanceBefore = asset.balanceOf(address(strategy));
-        vm.prank(keeper);
+        vm.prank(management);
         uint256 _claimed = infinifiStrategy.claimCooldown();
 
         assertEq(asset.balanceOf(address(strategy)), _balanceBefore + _claimed, "E0");
@@ -147,9 +147,9 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
     function test_claimCooldown_wrongCaller(
         address _wrongCaller
     ) public {
-        vm.assume(_wrongCaller != management && _wrongCaller != keeper);
+        vm.assume(_wrongCaller != management);
         vm.prank(_wrongCaller);
-        vm.expectRevert("!keeper");
+        vm.expectRevert("!management");
         infinifiStrategy.claimCooldown();
     }
 
