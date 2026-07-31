@@ -590,7 +590,7 @@ contract StrategyTests is Base {
         _strategies[0] = strategy;
 
         vm.expectRevert("!vault");
-        exitRouter.redeem(_vault, _shares, _receiver, address(this), _maxLoss, _strategies);
+        exitRouter.redeem(_vault, _shares, _receiver, _maxLoss, _strategies);
     }
 
     function test_exitRouter_redeem(
@@ -618,7 +618,7 @@ contract StrategyTests is Base {
         _strategies[0] = strategy;
         vm.startPrank(user);
         ERC20(address(_vault)).approve(address(exitRouter), _shares);
-        exitRouter.redeem(address(_vault), _shares, user, user, MAX_BPS, _strategies);
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _strategies);
         vm.stopPrank();
 
         // The vault position is closed and an auction was kicked with the user as receiver
@@ -646,7 +646,7 @@ contract StrategyTests is Base {
         _strategies[0] = strategy;
         vm.startPrank(user);
         ERC20(address(_vault)).approve(address(exitRouter), _shares);
-        exitRouter.redeem(address(_vault), _shares, user, user, MAX_BPS, _strategies);
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _strategies);
         vm.stopPrank();
 
         // The router cleared the receiver before returning, so the limit is idle-bound again
@@ -700,7 +700,7 @@ contract StrategyTests is Base {
         assertApproxEqRel(asset.balanceOf(address(_vault)), _amount - _dust, 1e16, "E1"); // 1%
     }
 
-    function test_exitRouter_redeem_withoutAllowance_reverts(
+    function test_exitRouter_redeem_withoutApproval_reverts(
         uint256 _amount
     ) public {
         _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
@@ -710,15 +710,16 @@ contract StrategyTests is Base {
         IStrategy[] memory _strategies = new IStrategy[](1);
         _strategies[0] = strategy;
 
-        // A third party cannot redeem the user's shares without an allowance
+        // Without approving the router first, the redemption reverts
         uint256 _shares = _vault.balanceOf(user);
-        address _thirdParty = address(777);
-        vm.prank(_thirdParty);
+        vm.prank(user);
         vm.expectRevert("insufficient allowance");
-        exitRouter.redeem(address(_vault), _shares, _thirdParty, user, MAX_BPS, _strategies);
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _strategies);
     }
 
-    function test_exitRouter_redeem_delegated(
+    // An approval given to the router is only ever spendable by the approver, so it cannot be used to
+    // redeem their shares to someone else
+    function test_exitRouter_redeem_cannotSpendAnothersApproval(
         uint256 _amount
     ) public {
         _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
@@ -728,17 +729,24 @@ contract StrategyTests is Base {
         IStrategy[] memory _strategies = new IStrategy[](1);
         _strategies[0] = strategy;
 
-        // The user approves the router, so a third party can exit on their behalf
+        // The user approves the router for their whole position
         uint256 _shares = _vault.balanceOf(user);
         vm.prank(user);
         ERC20(address(_vault)).approve(address(exitRouter), _shares);
 
-        uint256 _balanceBefore = asset.balanceOf(user);
-        vm.prank(address(777));
-        exitRouter.redeem(address(_vault), _shares, user, user, MAX_BPS, _strategies);
+        // An attacker cannot redeem against it, with themselves or the user as the receiver. The owner is
+        // always the caller, who holds nothing
+        address _attacker = address(777);
+        vm.startPrank(_attacker);
+        vm.expectRevert("insufficient shares to redeem");
+        exitRouter.redeem(address(_vault), _shares, _attacker, MAX_BPS, _strategies);
+        vm.expectRevert("insufficient shares to redeem");
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _strategies);
+        vm.stopPrank();
 
-        assertEq(_vault.balanceOf(user), 0, "E0");
-        assertApproxEqRel(asset.balanceOf(user) - _balanceBefore, _amount, 1e16, "E1"); // 1%
+        // The user still holds everything
+        assertEq(_vault.balanceOf(user), _shares, "E0");
+        assertEq(asset.balanceOf(_attacker), 0, "E1");
     }
 
 }
@@ -757,7 +765,7 @@ contract SequencedExitAttacker {
         ERC20(address(_vault)).approve(address(_router), _shares);
         IStrategy[] memory _strategies = new IStrategy[](1);
         _strategies[0] = _strategy;
-        _router.redeem(address(_vault), _shares, address(this), address(this), 10_000, _strategies);
+        _router.redeem(address(_vault), _shares, address(this), 10_000, _strategies);
 
         // Then try to divert the rest of the position to ourselves
         _vault.update_debt(address(_strategy), 0);
