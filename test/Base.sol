@@ -8,6 +8,9 @@ import {ICatFactory} from "./interfaces/ICatFactory.sol";
 import {ILender} from "../src/interfaces/ILender.sol";
 import {IStrategy} from "../src/interfaces/IStrategy.sol";
 
+import {IVault} from "../script/interfaces/IVault.sol";
+import {IVaultFactory} from "../script/interfaces/IVaultFactory.sol";
+
 import {IAuction} from "./interfaces/IAuction.sol";
 import {IDutchDesk} from "./interfaces/IDutchDesk.sol";
 import {IPriceOracle} from "./interfaces/IPriceOracle.sol";
@@ -23,6 +26,9 @@ contract Base is DeployStrategyFactory, Test {
     ERC20 public asset;
     IStrategy public strategy;
     ILender public LENDER;
+
+    // 3.0.4 Vault Factory
+    IVaultFactory public constant VAULT_FACTORY = IVaultFactory(0x770D0d1Fb036483Ed4AbB6d53c1C88fb277D812F);
 
     // Roles
     address public user = address(1);
@@ -267,6 +273,27 @@ contract Base is DeployStrategyFactory, Test {
         asset.approve(address(_auction), _amountNeeded);
         _auction.take(_auctionId, type(uint256).max, _liquidator, "");
         vm.stopPrank();
+    }
+
+    /// @dev Deploy a V3 vault holding the strategy, and allocate `_amount` of `user` deposits to it
+    function _setUpVault(
+        uint256 _amount
+    ) internal returns (IVault _vault) {
+        _vault = IVault(VAULT_FACTORY.deploy_new_vault(address(asset), "Flex yVault", "yvFlex", address(this), 7 days));
+        _vault.set_role(address(this), 16383);
+        _vault.set_deposit_limit(type(uint256).max);
+        _vault.add_strategy(address(strategy));
+        _vault.update_max_debt_for_strategy(address(strategy), type(uint256).max);
+        vm.prank(management);
+        strategy.setAllowed(address(_vault), true);
+
+        // Deposit into the vault and allocate everything to the strategy
+        airdrop(asset, user, _amount);
+        vm.startPrank(user);
+        asset.approve(address(_vault), _amount);
+        _vault.deposit(_amount, user);
+        vm.stopPrank();
+        _vault.update_debt(address(strategy), _amount);
     }
 
     function checkStrategyTotals(
