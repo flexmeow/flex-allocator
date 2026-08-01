@@ -45,7 +45,7 @@ contract BadDebtTests is Base {
     ) public {
         _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
 
-        (IVault _vault, uint256 _troveId, uint256 _price) = _setUpBadDebt(_amount);
+        (IVault _vault, uint256 _troveId, uint256 _price) = _setUpBadDebt(_amount, 0.91e18);
         ITroveManager _tm = ITroveManager(address(LENDER.TROVE_MANAGER()));
 
         // The redemption path is bricked, freeing beyond idle underflows on the underwater trove
@@ -90,7 +90,7 @@ contract BadDebtTests is Base {
     ) public {
         _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
 
-        (IVault _vault, uint256 _troveId, uint256 _price) = _setUpBadDebt(_amount);
+        (IVault _vault, uint256 _troveId, uint256 _price) = _setUpBadDebt(_amount, 0.91e18);
         ITroveManager _tm = ITroveManager(address(LENDER.TROVE_MANAGER()));
 
         // The curator contract holds no vault or strategy shares, only working capital
@@ -123,21 +123,94 @@ contract BadDebtTests is Base {
         assertLt(LENDER.convertToAssets(WAD), WAD, "E8");
     }
 
+    // Collateral repricing that stays inside the buffer (CR above 105% == 100% + max liquidation
+    // fee): the liquidation repays debt in full, the fee comes out of the borrower's buffer, and
+    // no loss reaches the lender
+    function test_badDebt_lossInsideBuffer_lenderWhole(
+        uint256 _amount,
+        uint256 _targetCR
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+        _targetCR = bound(_targetCR, 1.055e18, 1.095e18);
+
+        (IVault _vault, uint256 _troveId, uint256 _price) = _setUpBadDebt(_amount, _targetCR);
+        ITroveManager _tm = ITroveManager(address(LENDER.TROVE_MANAGER()));
+        uint256 _debtBefore = _tm.get_trove_debt_after_interest(_troveId);
+
+        // The user hands their vault shares to the exiter contract
+        BadDebtExiter _exiter = new BadDebtExiter();
+        uint256 _shares = _vault.balanceOf(user);
+        vm.prank(user);
+        ERC20(address(_vault)).transfer(address(_exiter), _shares);
+
+        // Liquidate, partially, bringing the trove back to the safe CR
+        _exiter.exit(_tm, _vault, _troveId, _debtBefore);
+        uint256 _paid = _exiter.paid();
+        uint256 _collateral = _exiter.collateral();
+
+        // The repayment is covered by its collateral equivalent plus a fee, and the flashloan repaid
+        assertGt(_paid, 0, "E0");
+        assertGt(_collateral * _price / 1e36, _paid, "E1");
+        assertEq(ERC20(WSTETH).balanceOf(address(_exiter)), _collateral, "E2");
+        assertLe(asset.balanceOf(address(_exiter)), 2, "E3");
+
+        // The trove survives with reduced debt
+        assertEq(uint256(_tm.troves(_troveId).status), uint256(ITroveManager.Status.active), "E4");
+        assertLt(_tm.get_trove_debt_after_interest(_troveId), _debtBefore, "E5");
+
+        // No loss reaches the Lender or the strategy
+        vm.prank(LENDER.keeper());
+        LENDER.report();
+        assertGe(LENDER.convertToAssets(WAD), WAD, "E6");
+        vm.prank(keeper);
+        (, uint256 _loss) = strategy.report();
+        assertEq(_loss, 0, "E7");
+    }
+
+    // Once the repricing eats through the buffer (CR below 105%), the liquidation can no longer
+    // repay the full debt and the shortfall is socialized to the lender
+    function test_badDebt_lossBeyondBuffer_lenderLoss(
+        uint256 _amount,
+        uint256 _targetCR
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+        _targetCR = bound(_targetCR, 1e18, 1.03e18);
+
+        (IVault _vault, uint256 _troveId,) = _setUpBadDebt(_amount, _targetCR);
+        ITroveManager _tm = ITroveManager(address(LENDER.TROVE_MANAGER()));
+        uint256 _debt = _tm.get_trove_debt_after_interest(_troveId);
+
+        // The user hands their vault shares to the exiter contract
+        BadDebtExiter _exiter = new BadDebtExiter();
+        uint256 _shares = _vault.balanceOf(user);
+        vm.prank(user);
+        ERC20(address(_vault)).transfer(address(_exiter), _shares);
+
+        // Liquidate, fully
+        _exiter.exit(_tm, _vault, _troveId, _debt);
+
+        // The repayment falls short of the debt and the Lender is marked down atomically
+        assertLt(_exiter.paid(), _debt, "E0");
+        assertEq(uint256(_tm.troves(_troveId).status), uint256(ITroveManager.Status.liquidated), "E1");
+        assertLt(LENDER.convertToAssets(WAD), WAD, "E2");
+    }
+
     // ============================================================================================
     // Helpers
     // ============================================================================================
 
-    /// @dev Allocate `_amount` of vault deposits, borrow half of it, then drop the collateral
-    ///      price 25% so the trove is underwater (CR ~91%)
+    /// @dev Allocate `_amount` of vault deposits, borrow half of it, then reprice the collateral
+    ///      so the trove sits at the target CR
     function _setUpBadDebt(
-        uint256 _amount
+        uint256 _amount,
+        uint256 _targetCR
     ) internal returns (IVault _vault, uint256 _troveId, uint256 _price) {
         _vault = _setUpVault(_amount);
         _troveId = openTrove(address(77), _amount / 2);
 
-        IPriceOracle _oracle = IPriceOracle(ITroveManager(address(LENDER.TROVE_MANAGER())).price_oracle());
-        _price = _oracle.get_price() * 3 / 4;
-        vm.mockCall(address(_oracle), abi.encodeWithSignature("get_price()"), abi.encode(_price));
+        ITroveManager _tm = ITroveManager(address(LENDER.TROVE_MANAGER()));
+        _price = _targetCR * _tm.get_trove_debt_after_interest(_troveId) * WAD / _tm.troves(_troveId).collateral;
+        vm.mockCall(_tm.price_oracle(), abi.encodeWithSignature("get_price()"), abi.encode(_price));
     }
 
 }
