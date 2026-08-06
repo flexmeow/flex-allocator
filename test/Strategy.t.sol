@@ -342,6 +342,45 @@ contract StrategyTests is Base {
         strategy.report();
     }
 
+    // An expired, untaken auction is inactive but not settled, its proceeds are still owed
+    function test_forceFreeFunds_expiredAuction_blocks(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drain the Lender's idle so the force free kicks an auction
+        openTrove(address(77), _amount);
+
+        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
+        IAuction _auction = IAuction(_dutchDesk.auction());
+        uint256 _auctionId = _dutchDesk.nonce();
+
+        vm.prank(management);
+        strategy.forceFreeFunds(_amount, 0);
+
+        // Let the auction expire untaken
+        skip(_auction.auction_length() + 1);
+        assertFalse(_auction.is_active(_auctionId), "E0");
+
+        // Reporting and freeing more funds are still blocked
+        vm.prank(keeper);
+        vm.expectRevert("!auction");
+        strategy.report();
+        vm.prank(management);
+        vm.expectRevert("!auction");
+        strategy.forceFreeFunds(_amount, 0);
+
+        // Re-kick and take, then reporting works again
+        _dutchDesk.re_kick(_auctionId);
+        takeAuction(_auctionId, _auction);
+        vm.prank(management);
+        strategy.setLossLimitRatio(MAX_BPS - 1);
+        vm.prank(keeper);
+        strategy.report();
+    }
+
     function test_forceFreeFunds_slippage_reverts(
         uint256 _amount
     ) public {

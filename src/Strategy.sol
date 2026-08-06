@@ -139,8 +139,8 @@ contract FlexLenderStrategy is BaseHealthCheck {
         uint256 _amount,
         uint256 _minOut
     ) public onlyManagement returns (uint256) {
-        // Make sure there is no active auction
-        require(!AUCTION.is_active(pendingAuctionId), "!auction");
+        // Make sure our last auction is fully settled
+        require(AUCTION.auctions(pendingAuctionId).kick_timestamp == 0, "!auction");
 
         // Cache the next auction id, in case the redemption kicks one
         uint256 _nextAuctionId = DUTCH_DESK.nonce();
@@ -250,8 +250,8 @@ contract FlexLenderStrategy is BaseHealthCheck {
 
     /// @inheritdoc BaseStrategy
     function _harvestAndReport() internal view virtual override returns (uint256) {
-        // Wait for our auction to be settled
-        require(!AUCTION.is_active(pendingAuctionId), "!auction");
+        // Wait for our auction to be fully settled
+        require(AUCTION.auctions(pendingAuctionId).kick_timestamp == 0, "!auction");
 
         // Total assets is whatever idle asset we have + our Lender shares converted to asset
         return asset.balanceOf(address(this)) + LENDER.convertToAssets(LENDER.balanceOf(address(this)));
