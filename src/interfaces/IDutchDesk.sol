@@ -5,5 +5,6 @@ interface IDutchDesk {
 
     function auction() external view returns (address);
     function nonce() external view returns (uint256);
+    function starting_price_buffer_percentage() external view returns (uint256);
 
 }

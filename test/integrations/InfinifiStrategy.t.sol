@@ -79,6 +79,16 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
         new InfinifiFlexLenderStrategy(_yvusdLender, address(exitRouter), "nope");
     }
 
+    function test_constructor_startingPriceBuffer_reverts() public {
+        // A market with a starting price buffer cannot be wrapped. Reuse the existing oracle, the
+        // Morpho oracle factory reverts on a same-salt redeploy
+        startingPriceBuffer = 1e18 + 1e15; // 100.1%
+        address _oracle = ITroveManager(address(LENDER.TROVE_MANAGER())).price_oracle();
+        address _lender = deployFlexMarket(USDC, SIUSD, _oracle, 500e6);
+        vm.expectRevert("!buffer");
+        new InfinifiFlexLenderStrategy(_lender, address(exitRouter), "nope");
+    }
+
     function test_initiateCooldown(
         uint256 _amount
     ) public {

@@ -68,6 +68,14 @@ contract LidoStrategyTests is CooldownStrategyTests {
         new LidoFlexLenderStrategy(_yvusdLender, address(exitRouter), "nope");
     }
 
+    function test_constructor_startingPriceBuffer_reverts() public {
+        // A market with a starting price buffer cannot be wrapped
+        startingPriceBuffer = 1e18 + 1e15; // 100.1%
+        address _lender = _deployLender();
+        vm.expectRevert("!buffer");
+        new LidoFlexLenderStrategy(_lender, address(exitRouter), "nope");
+    }
+
     function test_initiateCooldown_accumulates(
         uint256 _amount
     ) public {

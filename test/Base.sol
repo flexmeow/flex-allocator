@@ -43,6 +43,9 @@ contract Base is DeployStrategyFactory, Test {
 
     uint256 public MAX_BPS = 10_000;
     uint256 public WAD = 1e18;
+
+    // Market config
+    uint256 public startingPriceBuffer = 1e18; // 100%
     uint256 public ASSET_PRECISION;
 
     function setUp() public virtual {
@@ -133,7 +136,7 @@ contract Base is DeployStrategyFactory, Test {
                 interest_rate_adj_cooldown: 7 days,
                 repay_cooldown: 0,
                 minimum_price_buffer_percentage: 1e18 - 1e16, // 99%
-                starting_price_buffer_percentage: 1e18, // 100%
+                starting_price_buffer_percentage: startingPriceBuffer,
                 re_kick_starting_price_buffer_percentage: 1e18 + 1e15, // 100.1%
                 step_duration: 60, // 1 minute
                 step_decay_rate: 1, // 0.01%

@@ -15,6 +15,9 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
     // Constants
     // ============================================================================================
 
+    /// @notice WAD constant
+    uint256 internal constant _WAD = 1e18;
+
     /// @notice Collateral token
     IERC4626 public immutable COLLATERAL;
 
@@ -42,6 +45,9 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
     ) FlexLenderStrategy(_asset, _lender, _exitRouter, _name) {
         // Set the collateral token
         COLLATERAL = IERC4626(LENDER.TROVE_MANAGER().collateral_token());
+
+        // Make sure the auction starting price buffer is 0
+        require(DUTCH_DESK.starting_price_buffer_percentage() == _WAD, "!buffer");
     }
 
     // ============================================================================================
