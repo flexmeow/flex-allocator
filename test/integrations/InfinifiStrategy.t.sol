@@ -88,7 +88,7 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
 
         // Unwind the loose siUSD through InfiniFi
         vm.prank(management);
-        (uint256 _assetsOut, uint256 _pending) = infinifiStrategy.initiateCooldown(type(uint256).max);
+        (uint256 _assetsOut, uint256 _pending) = infinifiStrategy.initiateCooldown(type(uint256).max, 0);
 
         // All the collateral was unwound, into instant assets and/or a queued redemption
         assertGt(_loose, 0, "E0");
@@ -105,7 +105,40 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
 
         vm.prank(management);
         vm.expectRevert("!pending");
-        infinifiStrategy.initiateCooldown(type(uint256).max);
+        infinifiStrategy.initiateCooldown(type(uint256).max, 0);
+    }
+
+    function test_initiateCooldown_minInstant(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        _freeInKind(_amount);
+
+        // Measure the instant fill, then rewind
+        uint256 _snapshot = vm.snapshotState();
+        vm.prank(management);
+        (uint256 _assetsOut,) = infinifiStrategy.initiateCooldown(type(uint256).max, 0);
+        vm.revertToState(_snapshot);
+
+        // Asking for more than the instant fill reverts
+        vm.prank(management);
+        vm.expectRevert("shrekt");
+        infinifiStrategy.initiateCooldown(type(uint256).max, _assetsOut + 1);
+
+        // Asking for exactly the instant fill passes
+        vm.prank(management);
+        (uint256 _secondAssetsOut,) = infinifiStrategy.initiateCooldown(type(uint256).max, _assetsOut);
+        assertEq(_secondAssetsOut, _assetsOut, "E0");
+    }
+
+    function test_initiateCooldown_wrongCaller(
+        address _wrongCaller
+    ) public {
+        vm.assume(_wrongCaller != management);
+        vm.prank(_wrongCaller);
+        vm.expectRevert("!management");
+        infinifiStrategy.initiateCooldown(1, 0);
     }
 
     function test_claimCooldown(
@@ -116,7 +149,7 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
         _freeInKind(_amount);
 
         vm.prank(management);
-        (, uint256 _pending) = infinifiStrategy.initiateCooldown(type(uint256).max);
+        (, uint256 _pending) = infinifiStrategy.initiateCooldown(type(uint256).max, 0);
 
         // Nothing was queued -- nothing to claim
         if (_pending == 0) {

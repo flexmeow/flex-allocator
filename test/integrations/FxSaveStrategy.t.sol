@@ -135,6 +135,15 @@ contract FxSaveStrategyTests is CooldownStrategyTests {
         assertEq(ERC20(FXUSD).balanceOf(address(strategy)), 0, "E2");
     }
 
+    function test_initiateCooldown_wrongCaller(
+        address _wrongCaller
+    ) public {
+        vm.assume(_wrongCaller != management);
+        vm.prank(_wrongCaller);
+        vm.expectRevert("!management");
+        fxSaveStrategy.initiateCooldown(1);
+    }
+
     function test_claimCooldown_wrongCaller(
         address _wrongCaller
     ) public {

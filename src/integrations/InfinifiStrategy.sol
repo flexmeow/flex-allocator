@@ -59,10 +59,13 @@ contract InfinifiFlexLenderStrategy is CooldownFlexLenderStrategy {
     /// @notice Unstake loose siUSD and redeem it for the asset, queueing whatever cannot be redeemed instantly
     /// @dev Only callable by management
     /// @param _shares The amount of siUSD to unwind, capped by the loose balance
+    /// @param _minAssetsOut The minimum amount of asset redeemed instantly, for when the redemption
+    ///        is expected to skip the queue
     /// @return _assetsOut The amount of asset received instantly
     /// @return _pendingAssets The amount of asset queued in InfiniFi's redemption controller
     function initiateCooldown(
-        uint256 _shares
+        uint256 _shares,
+        uint256 _minAssetsOut
     ) external onlyManagement returns (uint256 _assetsOut, uint256 _pendingAssets) {
         require(pendingRedemptions == 0, "!pending");
 
@@ -77,6 +80,9 @@ contract InfinifiFlexLenderStrategy is CooldownFlexLenderStrategy {
         uint256 _preBalance = asset.balanceOf(address(this));
         GATEWAY.redeem(address(this), _iusdAmount, 0);
         _assetsOut = asset.balanceOf(address(this)) - _preBalance;
+
+        // Make sure we got at least the minimum instant amount requested
+        require(_assetsOut >= _minAssetsOut, "shrekt");
 
         // Record the queued amount
         if (_expectedAssets > _assetsOut) pendingRedemptions = _expectedAssets - _assetsOut;

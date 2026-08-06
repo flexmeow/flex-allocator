@@ -118,6 +118,15 @@ contract LidoStrategyTests is CooldownStrategyTests {
         assertEq(lidoStrategy.requestAmounts(_requestId), 0, "E4");
     }
 
+    function test_initiateCooldown_wrongCaller(
+        address _wrongCaller
+    ) public {
+        vm.assume(_wrongCaller != management);
+        vm.prank(_wrongCaller);
+        vm.expectRevert("!management");
+        lidoStrategy.initiateCooldown(1);
+    }
+
     function test_claimCooldown_unknownRequest_reverts(
         uint256 _requestId
     ) public {

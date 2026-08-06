@@ -22,10 +22,6 @@ interface ICooldownStrategy is IStrategy {
         uint256 _minOut
     ) external returns (uint256);
 
-    function initiateCooldown(
-        uint256 _shares
-    ) external;
-
     function zeroPendingRedemptions() external;
 
 }

@@ -81,15 +81,6 @@ abstract contract CooldownStrategyTests is Base {
         assertEq(cooldownStrategy.pendingRedemptions(), 0, "E0");
     }
 
-    function test_initiateCooldown_wrongCaller(
-        address _wrongCaller
-    ) public {
-        vm.assume(_wrongCaller != management);
-        vm.prank(_wrongCaller);
-        vm.expectRevert("!management");
-        cooldownStrategy.initiateCooldown(1);
-    }
-
     function test_zeroPendingRedemptions_wrongCaller(
         address _wrongCaller
     ) public {
