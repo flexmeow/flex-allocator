@@ -57,14 +57,8 @@ contract FlexLenderStrategy is BaseHealthCheck {
     // Storage
     // ============================================================================================
 
-    /// @notice Whether deposits are open to everyone
-    bool public openDeposits;
-
     /// @notice Auction kicked by the last `forceFreeFunds`
     uint256 public pendingAuctionId;
-
-    /// @notice Addresses allowed to deposit when openDeposits is false
-    mapping(address => bool) public allowed;
 
     // ============================================================================================
     // Constructor
@@ -107,7 +101,7 @@ contract FlexLenderStrategy is BaseHealthCheck {
     function availableDepositLimit(
         address _owner
     ) public view override returns (uint256) {
-        return openDeposits || allowed[_owner] ? LENDER.maxDeposit(address(this)) : 0;
+        return Math.min(super.availableDepositLimit(_owner), LENDER.maxDeposit(address(this)));
     }
 
     /// @inheritdoc BaseStrategy
@@ -187,25 +181,6 @@ contract FlexLenderStrategy is BaseHealthCheck {
 
         // Return the actual amount deployed
         return _amount;
-    }
-
-    /// @notice Open or close strategy deposits globally
-    /// @dev If closed, only `allowed[_owner]` addresses can deposit
-    /// @param _isOpen Whether deposits are open to everyone
-    function setOpen(
-        bool _isOpen
-    ) external onlyManagement {
-        openDeposits = _isOpen;
-    }
-
-    /// @notice Allow or disallow a specific address to deposit
-    /// @param _address Address to allow or disallow
-    /// @param _isAllowed Whether the address is allowed to deposit
-    function setAllowed(
-        address _address,
-        bool _isAllowed
-    ) external onlyManagement {
-        allowed[_address] = _isAllowed;
     }
 
     // ============================================================================================
