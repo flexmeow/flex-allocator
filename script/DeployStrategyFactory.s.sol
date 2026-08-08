@@ -3,6 +3,7 @@ pragma solidity 0.8.30;
 
 import {StrategyFactory} from "../src/StrategyFactory.sol";
 import {FlexExitRouter} from "../src/periphery/ExitRouter.sol";
+import {StrategyAprOracle} from "../src/periphery/StrategyAprOracle.sol";
 
 import "forge-std/Script.sol";
 
@@ -19,6 +20,7 @@ contract DeployStrategyFactory is Script {
     // Deployed contracts
     FlexExitRouter public exitRouter;
     StrategyFactory public strategyFactory;
+    StrategyAprOracle public strategyAprOracle;
 
     function run() public {
         uint256 _pk = isTest ? 42_069 : vm.envUint("DEPLOYER_PRIVATE_KEY");
@@ -33,17 +35,20 @@ contract DeployStrategyFactory is Script {
 
         vm.startBroadcast(_pk);
 
-        // Deploy the ExitRouter and the StrategyFactory
+        // Deploy the ExitRouter, the StrategyFactory, and the StrategyAprOracle
         exitRouter = new FlexExitRouter();
         strategyFactory = new StrategyFactory(address(exitRouter));
+        strategyAprOracle = new StrategyAprOracle();
 
         if (isTest) {
             vm.label({account: address(exitRouter), newLabel: "ExitRouter"});
             vm.label({account: address(strategyFactory), newLabel: "StrategyFactory"});
+            vm.label({account: address(strategyAprOracle), newLabel: "StrategyAprOracle"});
         } else {
             console2.log("---------------------------------");
             console2.log("Exit Router: ", address(exitRouter));
             console2.log("Strategy Factory: ", address(strategyFactory));
+            console2.log("Strategy APR Oracle: ", address(strategyAprOracle));
             console2.log("---------------------------------");
         }
 
