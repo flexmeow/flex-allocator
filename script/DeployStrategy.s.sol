@@ -17,9 +17,9 @@ import "forge-std/Script.sol";
 contract DeployStrategy is Script {
 
     // Market params
-    string public constant NAME = "Flex yvUSD/USDC Lender";
+    string public constant NAME = "Flex ysyBOLD/USDC Lender";
     address public constant ASSET = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48; // USDC
-    address public constant LENDER = 0xD93Dade7Ac8b5d1687da5d074835cB4404Dee8bA; // Flex v2 yvUSD/USDC Lender
+    address public constant LENDER = 0xf4996Ca4190A1a3e7CF19AbE2F6eb712abd4a03C; // Flex v2 ysyBOLD/USDC Lender
 
     // Yearn addresses
     address public constant SMS = 0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7; // sms mainnet
