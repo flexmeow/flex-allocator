@@ -18,6 +18,9 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
     /// @notice WAD constant
     uint256 internal constant _WAD = 1e18;
 
+    /// @notice Pending amount below which reports are not blocked, for rounding dust the protocol leaves behind
+    uint256 public immutable PENDING_DUST;
+
     /// @notice Collateral token
     IERC4626 public immutable COLLATERAL;
 
@@ -25,8 +28,8 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
     // Storage
     // ============================================================================================
 
-    /// @notice Asset amount queued for redemption in the collateral's protocol
-    uint256 public pendingRedemptions;
+    /// @notice Whether reports ignore the pending redemptions, an escape hatch for management
+    bool public ignorePending;
 
     // ============================================================================================
     // Constructor
@@ -48,6 +51,30 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
 
         // Make sure the auction starting price buffer is 0
         require(DUTCH_DESK.starting_price_buffer_percentage() == _WAD, "!buffer");
+
+        // Set the dust to half the asset's decimals, e.g. 0.001 USDC or 1e9 ETH
+        PENDING_DUST = 10 ** (asset.decimals() / 2);
+    }
+
+    // ============================================================================================
+    // Public view functions
+    // ============================================================================================
+
+    /// @notice Asset value taken in kind that is not back yet, loose collateral plus whatever is
+    ///         queued in the collateral's protocol, read live
+    function pendingRedemptions() public view virtual returns (uint256);
+
+    // ============================================================================================
+    // Management functions
+    // ============================================================================================
+
+    /// @notice Set whether reports ignore the pending redemptions
+    /// @dev Only callable by management
+    /// @param _ignorePending Whether to ignore the pending redemptions
+    function setIgnorePending(
+        bool _ignorePending
+    ) external onlyManagement {
+        ignorePending = _ignorePending;
     }
 
     // ============================================================================================
@@ -73,12 +100,6 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
         if (AUCTION.is_active(_auctionId)) AUCTION.take(_auctionId);
     }
 
-    /// @notice Zero out the pending redemptions accounting
-    /// @dev Only callable by management
-    function zeroPendingRedemptions() external onlyManagement {
-        pendingRedemptions = 0;
-    }
-
     // ============================================================================================
     // Internal view functions
     // ============================================================================================
@@ -100,8 +121,8 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
 
     /// @inheritdoc BaseStrategy
     function _harvestAndReport() internal view override returns (uint256) {
-        // Block reports until in-flight cooldowns are claimed
-        require(pendingRedemptions == 0, "!cooldown");
+        // Block reports until everything taken in kind is back as asset, unless management says otherwise
+        require(ignorePending || pendingRedemptions() <= PENDING_DUST, "!cooldown");
         return super._harvestAndReport();
     }
 

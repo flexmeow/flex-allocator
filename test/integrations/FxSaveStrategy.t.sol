@@ -112,9 +112,9 @@ contract FxSaveStrategyTests is CooldownStrategyTests {
         vm.prank(management);
         (uint256 _assetsOut, uint256 _fxusdOut) = fxSaveStrategy.claimCooldown();
 
-        // The claim is worth ~ the queued amount, valuing fxUSD at $1
+        // The claim is worth ~ the queued amount, valuing fxUSD at $1. The fxUSD leg stays pending
         assertApproxEqRel(_assetsOut + _fxusdOut / 1e12, _pending, 1e16, "E1"); // 1%
-        assertEq(fxSaveStrategy.pendingRedemptions(), 0, "E2");
+        assertEq(fxSaveStrategy.pendingRedemptions(), _fxusdOut / 1e12, "E2");
 
         // Swap any fxUSD leg back to the asset
         if (_fxusdOut > 0) {
@@ -124,6 +124,7 @@ contract FxSaveStrategyTests is CooldownStrategyTests {
             assertEq(asset.balanceOf(address(strategy)), _balanceBefore + _swapped, "E3");
             assertApproxEqRel(_swapped, _fxusdOut / 1e12, 2e16, "E4"); // 2%
             assertEq(ERC20(FXUSD).balanceOf(address(strategy)), 0, "E5");
+            assertEq(fxSaveStrategy.pendingRedemptions(), 0, "E6");
         }
     }
 

@@ -39,6 +39,16 @@ contract LockedYvusdFlexLenderStrategy is CooldownFlexLenderStrategy {
     }
 
     // ============================================================================================
+    // Public view functions
+    // ============================================================================================
+
+    /// @inheritdoc CooldownFlexLenderStrategy
+    function pendingRedemptions() public view override returns (uint256) {
+        // Cooling shares stay in the balance. Locked yvUSD --> yvUSD --> asset
+        return YVUSD.convertToAssets(COLLATERAL.convertToAssets(COLLATERAL.balanceOf(address(this))));
+    }
+
+    // ============================================================================================
     // Cooldown
     // ============================================================================================
 
@@ -46,22 +56,20 @@ contract LockedYvusdFlexLenderStrategy is CooldownFlexLenderStrategy {
     /// @dev Only callable by management
     /// @dev The withdrawal window opens after `cooldownDuration` and lasts `withdrawalWindow`,
     ///      missing it means starting over
-    /// @dev Calling while `pendingRedemptions > 0` restarts everything, the cooldown timer and
-    ///      the pending accounting, so an in-progress cooldown is lost
+    /// @dev Calling while a cooldown is in progress restarts its timer
     /// @param _shares The amount of Locked yvUSD to unwind, capped by the loose balance
-    /// @return _pendingAssets The amount of asset the cooled shares are worth
+    /// @return The amount of asset the cooled shares are worth
     function initiateCooldown(
         uint256 _shares
-    ) external onlyManagement returns (uint256 _pendingAssets) {
+    ) external onlyManagement returns (uint256) {
         // Cap the shares by the loose collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
 
         // Start the cooldown, replacing any in progress
         ILockedVault(address(COLLATERAL)).startCooldown(_shares);
 
-        // Record the cooled amount. Locked yvUSD --> yvUSD --> asset
-        _pendingAssets = YVUSD.convertToAssets(COLLATERAL.convertToAssets(_shares));
-        pendingRedemptions = _pendingAssets;
+        // Locked yvUSD --> yvUSD --> asset
+        return YVUSD.convertToAssets(COLLATERAL.convertToAssets(_shares));
     }
 
     /// @notice Redeem the cooled Locked yvUSD for the asset, within the withdrawal window
@@ -79,9 +87,6 @@ contract LockedYvusdFlexLenderStrategy is CooldownFlexLenderStrategy {
         uint256 _yvusdAmount = COLLATERAL.redeem(_shares, address(this), address(this));
         _assets = YVUSD.redeem(_yvusdAmount, address(this), address(this));
         require(_assets >= _minOut, "shrekt");
-
-        // Clear the claimed amount
-        pendingRedemptions = _assets >= pendingRedemptions ? 0 : pendingRedemptions - _assets;
     }
 
 }

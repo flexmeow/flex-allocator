@@ -39,13 +39,6 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     ICurveStableSwap public constant CURVE_POOL = ICurveStableSwap(0xDC24316b9AE028F1497c275EB9192a3Ea0f67022);
 
     // ============================================================================================
-    // Storage
-    // ============================================================================================
-
-    /// @notice Asset amount queued per withdrawal request
-    mapping(uint256 => uint256) public requestAmounts;
-
-    // ============================================================================================
     // Constructor
     // ============================================================================================
 
@@ -70,6 +63,23 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     receive() external payable {}
 
     // ============================================================================================
+    // Public view functions
+    // ============================================================================================
+
+    /// @inheritdoc CooldownFlexLenderStrategy
+    function pendingRedemptions() public view override returns (uint256 _pending) {
+        // Loose wstETH, 1:1 with the asset through stETH
+        _pending = IWstETH(address(COLLATERAL)).getStETHByWstETH(COLLATERAL.balanceOf(address(this)));
+
+        // Unclaimed withdrawal requests
+        ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory _statuses =
+            WITHDRAWAL_QUEUE.getWithdrawalStatus(WITHDRAWAL_QUEUE.getWithdrawalRequests(address(this)));
+        for (uint256 i; i < _statuses.length; ++i) {
+            if (!_statuses[i].isClaimed) _pending += _statuses[i].amountOfStETH;
+        }
+    }
+
+    // ============================================================================================
     // Cooldown
     // ============================================================================================
 
@@ -91,10 +101,6 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
         uint256[] memory _amounts = new uint256[](1);
         _amounts[0] = _pendingAssets;
         _requestId = WITHDRAWAL_QUEUE.requestWithdrawals(_amounts, address(this))[0];
-
-        // Record the queued amount
-        requestAmounts[_requestId] = _pendingAssets;
-        pendingRedemptions += _pendingAssets;
     }
 
     /// @notice Claim a finalized withdrawal request from Lido
@@ -104,14 +110,6 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     function claimCooldown(
         uint256 _requestId
     ) external onlyManagement returns (uint256 _assets) {
-        // Make sure the request is one of ours
-        uint256 _queued = requestAmounts[_requestId];
-        require(_queued > 0, "!request");
-
-        // Delete the request and settle its queued amount
-        delete requestAmounts[_requestId];
-        pendingRedemptions = _queued >= pendingRedemptions ? 0 : pendingRedemptions - _queued;
-
         // Claim the withdrawal and wrap the received ETH
         uint256 _preBalance = asset.balanceOf(address(this));
         WITHDRAWAL_QUEUE.claimWithdrawal(_requestId);

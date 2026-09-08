@@ -31,6 +31,13 @@ contract InfinifiFlexLenderStrategy is CooldownFlexLenderStrategy {
     IInfiniFiGatewayV1 public constant GATEWAY = IInfiniFiGatewayV1(0x3f04b65Ddbd87f9CE0A2e7Eb24d80e7fb87625b5);
 
     // ============================================================================================
+    // Storage
+    // ============================================================================================
+
+    /// @notice iUSD queued in InfiniFi's redemption controller, which has no per user view for it
+    uint256 public queuedReceipts;
+
+    // ============================================================================================
     // Constructor
     // ============================================================================================
 
@@ -53,6 +60,17 @@ contract InfinifiFlexLenderStrategy is CooldownFlexLenderStrategy {
     }
 
     // ============================================================================================
+    // Public view functions
+    // ============================================================================================
+
+    /// @inheritdoc CooldownFlexLenderStrategy
+    function pendingRedemptions() public view override returns (uint256) {
+        // Loose siUSD plus the queued iUSD, valued as asset
+        uint256 _receipts = COLLATERAL.convertToAssets(COLLATERAL.balanceOf(address(this))) + queuedReceipts;
+        return _redeemController().receiptToAsset(_receipts);
+    }
+
+    // ============================================================================================
     // Cooldown
     // ============================================================================================
 
@@ -67,42 +85,43 @@ contract InfinifiFlexLenderStrategy is CooldownFlexLenderStrategy {
         uint256 _shares,
         uint256 _minAssetsOut
     ) external onlyManagement returns (uint256 _assetsOut, uint256 _pendingAssets) {
-        require(pendingRedemptions == 0, "!pending");
-
         // Cap the shares by the loose collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
 
         // siUSD --> iUSD
         uint256 _iusdAmount = GATEWAY.unstake(address(this), _shares);
-        uint256 _expectedAssets = _redeemController().receiptToAsset(_iusdAmount);
 
         // iUSD --> asset. Anything not redeemed instantly is queued in the redemption controller
+        IRedeemController _redeemController_ = _redeemController();
         uint256 _preBalance = asset.balanceOf(address(this));
+        uint256 _preQueued = _redeemController_.totalEnqueuedRedemptions();
         GATEWAY.redeem(address(this), _iusdAmount, 0);
         _assetsOut = asset.balanceOf(address(this)) - _preBalance;
 
         // Make sure we got at least the minimum instant amount requested
         require(_assetsOut >= _minAssetsOut, "shrekt");
 
-        // Record the queued amount
-        if (_expectedAssets > _assetsOut) pendingRedemptions = _expectedAssets - _assetsOut;
-
-        return (_assetsOut, pendingRedemptions);
+        // Record the queued iUSD, the queue only grows within our redemption
+        uint256 _queued = _redeemController_.totalEnqueuedRedemptions() - _preQueued;
+        queuedReceipts += _queued;
+        _pendingAssets = _redeemController_.receiptToAsset(_queued);
     }
 
     /// @notice Claim queued redemptions from InfiniFi
     /// @dev Only callable by management
     /// @return _assets The amount of asset claimed
     function claimCooldown() external onlyManagement returns (uint256 _assets) {
-        require(_redeemController().userPendingClaims(address(this)) > 0, "!claim");
+        IRedeemController _redeemController_ = _redeemController();
+        require(_redeemController_.userPendingClaims(address(this)) > 0, "!claim");
 
         uint256 _preBalance = asset.balanceOf(address(this));
         GATEWAY.claimRedemption();
         _assets = asset.balanceOf(address(this)) - _preBalance;
         require(_assets > 0, "!assets");
 
-        // Clear the claimed amount
-        pendingRedemptions = _assets >= pendingRedemptions ? 0 : pendingRedemptions - _assets;
+        // Settle the claimed iUSD, converted back at the controller's rate
+        uint256 _receipts = _assets * _WAD / _redeemController_.receiptToAsset(_WAD);
+        queuedReceipts = _receipts >= queuedReceipts ? 0 : queuedReceipts - _receipts;
     }
 
     // ============================================================================================

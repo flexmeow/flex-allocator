@@ -137,7 +137,7 @@ contract LockedYvusdStrategyTests is CooldownStrategyTests {
         assertApproxEqRel(_claimed, _pending, 1e15, "E1"); // 0.1%
         assertLe(ERC20(LOCKED_YVUSD).balanceOf(address(strategy)), 1, "E2"); // `maxRedeem` rounds down a wei
         assertEq(ERC20(YVUSD).balanceOf(address(strategy)), 0, "E3");
-        assertEq(lockedYvusdStrategy.pendingRedemptions(), 0, "E4");
+        assertLe(lockedYvusdStrategy.pendingRedemptions(), 1e3, "E4"); // dust
 
         // Reporting works again. Allow a loss, since the in-kind take settled below par
         vm.prank(management);
