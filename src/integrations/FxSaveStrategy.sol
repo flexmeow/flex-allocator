@@ -48,7 +48,7 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
     // Storage
     // ============================================================================================
 
-    /// @notice fxBASE assets queued in fxBASE's redemption queue, which has no per user view for it
+    /// @notice fxBASE assets queued in fxBASE's redemption queue
     uint256 public queuedBaseAssets;
 
     // ============================================================================================
@@ -80,8 +80,7 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
         // Loose fxUSD, 1:1 with the asset
         _pending = FXUSD.balanceOf(address(this)) / _FXUSD_TO_ASSET_SCALE;
 
-        // Loose fxSAVE and the queued fxBASE assets, valued via fxBASE's nav. Only read the nav when
-        // needed, its price feed can be stale
+        // Loose fxSAVE and the queued fxBASE assets, valued via fxBASE's nav
         uint256 _baseAssets = COLLATERAL.convertToAssets(COLLATERAL.balanceOf(address(this))) + queuedBaseAssets;
         if (_baseAssets > 0) _pending += _baseAssets * FXBASE.nav() / _NAV_TO_ASSET_SCALE;
     }

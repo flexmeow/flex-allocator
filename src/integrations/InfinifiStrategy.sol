@@ -34,7 +34,7 @@ contract InfinifiFlexLenderStrategy is CooldownFlexLenderStrategy {
     // Storage
     // ============================================================================================
 
-    /// @notice iUSD queued in InfiniFi's redemption controller, which has no per user view for it
+    /// @notice iUSD queued in InfiniFi's redemption controller
     uint256 public queuedReceipts;
 
     // ============================================================================================
