@@ -17,13 +17,13 @@ import "forge-std/Script.sol";
 contract DeployStrategy is Script {
 
     // Market params
-    string public constant NAME = "Flex yvcrvUSD-2/USDC Lender";
-    address public constant ASSET = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48; // USDC
-    address public constant LENDER = 0xc1f281A3643F219636F97F6E687A33704950eC84; // Flex v2 yvcrvUSD-2/USDC Lender
+    string public constant NAME = "Flex yvWETH-2/WETH Lender";
+    address public constant ASSET = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2; // WETH
+    address public constant LENDER = 0x0d57098e501D68905fC4B0A3397f7D4Aa4889E36; // Flex v2 yvWETH-2/WETH Lender
 
     // Yearn addresses
     address public constant SMS = 0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7; // sms mainnet
-    address public constant VAULT = 0x863687e4E9751b57F38b4B0ebA04744C72d0f7B8; // yvFlexUSDC mainnet
+    address public constant VAULT = 0xfaC55fAFD0b55BFb8dD41F735EfCc195adA9891F; // yvFlexWETH mainnet
     address public constant KEEPER = 0x604e586F17cE106B64185A7a0d2c1Da5bAce711E; // yHaaS mainnet
     address public constant ACCOUNTANT = 0x5A74Cb32D36f2f517DB6f7b0A0591e09b22cDE69; // accountant mainnet
 
