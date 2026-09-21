@@ -29,4 +29,9 @@ interface ILidoWithdrawalQueue {
         uint256 _requestId
     ) external;
 
+    function claimWithdrawals(
+        uint256[] calldata _requestIds,
+        uint256[] calldata _hints
+    ) external;
+
 }

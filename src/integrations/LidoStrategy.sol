@@ -118,6 +118,23 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
         require(_assets > 0, "!assets");
     }
 
+    /// @notice Claim finalized withdrawal requests from Lido, with checkpoint hints
+    /// @dev Only callable by management
+    /// @param _requestIds The withdrawal request ids to claim
+    /// @param _hints The checkpoint hints, from the queue's `findCheckpointHints`
+    /// @return _assets The amount of asset claimed
+    function claimCooldown(
+        uint256[] calldata _requestIds,
+        uint256[] calldata _hints
+    ) external onlyManagement returns (uint256 _assets) {
+        // Claim the withdrawals and wrap the received ETH
+        uint256 _preBalance = asset.balanceOf(address(this));
+        WITHDRAWAL_QUEUE.claimWithdrawals(_requestIds, _hints);
+        if (address(this).balance > 0) IWETH(WETH).deposit{value: address(this).balance}();
+        _assets = asset.balanceOf(address(this)) - _preBalance;
+        require(_assets > 0, "!assets");
+    }
+
     /// @notice Swap loose wstETH to the asset through Curve, skipping the withdrawal queue
     /// @dev Only callable by management
     /// @param _shares The amount of wstETH to swap, capped by the loose balance

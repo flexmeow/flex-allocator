@@ -142,6 +142,47 @@ contract LidoStrategyTests is CooldownStrategyTests {
         lidoStrategy.claimCooldown(_requestId);
     }
 
+    function test_claimCooldown_withHints(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        _freeInKind(_amount);
+
+        // Queue the withdrawal
+        vm.prank(management);
+        uint256 _requestId = lidoStrategy.initiateCooldown(type(uint256).max);
+        uint256 _pending = lidoStrategy.pendingRedemptions();
+        assertGt(_pending, 0, "E0");
+
+        // Finalize the request as Lido
+        _finalizeLidoRequest(_requestId);
+
+        // Find the checkpoint hints, as an off-chain caller would
+        ILidoQueue _queue = ILidoQueue(address(lidoStrategy.WITHDRAWAL_QUEUE()));
+        uint256[] memory _requestIds = new uint256[](1);
+        _requestIds[0] = _requestId;
+        uint256[] memory _hints = _queue.findCheckpointHints(_requestIds, 1, _queue.getLastCheckpointIndex());
+
+        // Claim the withdrawal with the hints
+        uint256 _balanceBefore = asset.balanceOf(address(strategy));
+        vm.prank(management);
+        uint256 _claimed = lidoStrategy.claimCooldown(_requestIds, _hints);
+
+        assertEq(asset.balanceOf(address(strategy)), _balanceBefore + _claimed, "E1");
+        assertApproxEqRel(_claimed, _pending, 1e15, "E2"); // 0.1%
+        assertEq(lidoStrategy.pendingRedemptions(), 0, "E3");
+    }
+
+    function test_claimCooldown_withHints_wrongCaller(
+        address _wrongCaller
+    ) public {
+        vm.assume(_wrongCaller != management);
+        vm.prank(_wrongCaller);
+        vm.expectRevert("!management");
+        lidoStrategy.claimCooldown(new uint256[](0), new uint256[](0));
+    }
+
     function test_claimCooldown_wrongCaller(
         address _wrongCaller
     ) public {
