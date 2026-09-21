@@ -187,7 +187,7 @@ contract LockedYvusdStrategyTests is CooldownStrategyTests {
         lockedYvusdStrategy.initiateCooldown(type(uint256).max);
 
         // Nothing is redeemable before the cooldown ends
-        vm.expectRevert("!claim");
+        vm.expectRevert("ZERO_ASSETS");
         lockedYvusdStrategy.claimCooldown(0);
         vm.stopPrank();
     }
@@ -209,7 +209,7 @@ contract LockedYvusdStrategyTests is CooldownStrategyTests {
         // Missing the window means nothing is redeemable
         skip(_cooldownDuration + _withdrawalWindow + 1);
         vm.prank(management);
-        vm.expectRevert("!claim");
+        vm.expectRevert("ZERO_ASSETS");
         lockedYvusdStrategy.claimCooldown(0);
 
         // Starting over works

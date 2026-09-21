@@ -81,7 +81,6 @@ contract LockedYvusdFlexLenderStrategy is CooldownFlexLenderStrategy {
     ) external onlyManagement returns (uint256 _assets) {
         // Only the cooled shares are redeemable, and only within the window
         uint256 _shares = COLLATERAL.maxRedeem(address(this));
-        require(_shares > 0, "!claim");
 
         // Consume the collateral taken in kind variable
         takenInKind -= Math.min(_shares, takenInKind);
