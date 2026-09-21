@@ -3,7 +3,7 @@ pragma solidity 0.8.30;
 
 import {ILockedVault} from "../interfaces/ILockedVault.sol";
 
-import {CooldownFlexLenderStrategy, IERC4626} from "./CooldownStrategy.sol";
+import {CooldownFlexLenderStrategy, IERC4626, Math} from "./CooldownStrategy.sol";
 
 /// @title Locked yvUSD Flex Lender Strategy
 /// @author Flex
@@ -44,8 +44,8 @@ contract LockedYvusdFlexLenderStrategy is CooldownFlexLenderStrategy {
 
     /// @inheritdoc CooldownFlexLenderStrategy
     function pendingRedemptions() public view override returns (uint256) {
-        // Cooling shares stay in the balance. Locked yvUSD --> yvUSD --> asset
-        return YVUSD.convertToAssets(COLLATERAL.convertToAssets(COLLATERAL.balanceOf(address(this))));
+        // Locked yvUSD --> yvUSD --> asset
+        return YVUSD.convertToAssets(COLLATERAL.convertToAssets(takenInKind));
     }
 
     // ============================================================================================
@@ -62,7 +62,7 @@ contract LockedYvusdFlexLenderStrategy is CooldownFlexLenderStrategy {
     function initiateCooldown(
         uint256 _shares
     ) external onlyManagement returns (uint256) {
-        // Cap the shares by the loose collateral balance
+        // Cap the shares by the collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
 
         // Start the cooldown, replacing any in progress
@@ -82,6 +82,9 @@ contract LockedYvusdFlexLenderStrategy is CooldownFlexLenderStrategy {
         // Only the cooled shares are redeemable, and only within the window
         uint256 _shares = COLLATERAL.maxRedeem(address(this));
         require(_shares > 0, "!claim");
+
+        // Consume the collateral taken in kind variable
+        takenInKind -= Math.min(_shares, takenInKind);
 
         // Locked yvUSD --> yvUSD --> asset
         uint256 _yvusdAmount = COLLATERAL.redeem(_shares, address(this), address(this));

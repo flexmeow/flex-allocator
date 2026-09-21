@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import {IERC20, IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 import {BaseStrategy, ERC20, FlexLenderStrategy} from "../Strategy.sol";
 
@@ -30,6 +31,9 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
 
     /// @notice Whether reports ignore the pending redemptions, an escape hatch for management
     bool public ignorePending;
+
+    /// @notice Collateral taken in kind and not unwound yet, so that donations do not count as pending
+    uint256 public takenInKind;
 
     // ============================================================================================
     // Constructor
@@ -97,7 +101,7 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
 
         // Take the kicked auction, receiving the collateral in kind
         uint256 _auctionId = pendingAuctionId;
-        if (AUCTION.is_active(_auctionId)) AUCTION.take(_auctionId);
+        if (AUCTION.is_active(_auctionId)) takenInKind += AUCTION.take(_auctionId);
     }
 
     // ============================================================================================

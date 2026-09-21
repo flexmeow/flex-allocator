@@ -66,9 +66,24 @@ abstract contract CooldownStrategyTests is Base {
 
         _freeInKind(_amount);
         assertApproxEqRel(cooldownStrategy.pendingRedemptions(), _amount, 1e16, "E0"); // 1%
+        assertEq(cooldownStrategy.takenInKind(), _collateral().balanceOf(address(strategy)), "E1");
 
         vm.prank(keeper);
         vm.expectRevert("!cooldown");
+        strategy.report();
+    }
+
+    // Donated collateral was not taken in kind, so it is not pending and cannot block reports
+    function test_donation_notPending(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        airdrop(_collateral(), address(strategy), _amount);
+        assertEq(cooldownStrategy.takenInKind(), 0, "E0");
+        assertEq(cooldownStrategy.pendingRedemptions(), 0, "E1");
+
+        vm.prank(keeper);
         strategy.report();
     }
 

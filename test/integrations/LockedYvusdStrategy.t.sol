@@ -115,6 +115,36 @@ contract LockedYvusdStrategyTests is CooldownStrategyTests {
         assertEq(lockedYvusdStrategy.pendingRedemptions(), _pending, "E2");
     }
 
+    function test_initiateCooldown_replacesPartial(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        uint256 _loose = _freeInKind(_amount);
+        uint256 _pendingBefore = lockedYvusdStrategy.pendingRedemptions();
+
+        // Starting the same partial cooldown twice puts the first half back loose, nothing goes missing
+        vm.startPrank(management);
+        lockedYvusdStrategy.initiateCooldown(_loose / 2);
+        uint256 _pending = lockedYvusdStrategy.initiateCooldown(_loose / 2);
+        vm.stopPrank();
+
+        assertEq(lockedYvusdStrategy.pendingRedemptions(), _pendingBefore, "E0");
+
+        // Wait out the cooldown and claim the cooling half
+        skip(ILockedVault(LOCKED_YVUSD).cooldownDuration() + 1);
+        vm.prank(management);
+        uint256 _claimed = lockedYvusdStrategy.claimCooldown(0);
+        assertApproxEqRel(_claimed, _pending, 1e15, "E1"); // 0.1%
+
+        // The other half is still pending and blocks reports
+        assertEq(lockedYvusdStrategy.takenInKind(), ERC20(LOCKED_YVUSD).balanceOf(address(strategy)), "E2");
+        assertApproxEqRel(lockedYvusdStrategy.pendingRedemptions(), _pending, 1e15, "E3"); // 0.1%
+        vm.prank(keeper);
+        vm.expectRevert("!cooldown");
+        strategy.report();
+    }
+
     function test_claimCooldown(
         uint256 _amount
     ) public {

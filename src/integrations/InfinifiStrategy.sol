@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IInfiniFiGatewayV1} from "../interfaces/IInfiniFiGatewayV1.sol";
 import {IRedeemController} from "../interfaces/IRedeemController.sol";
 
-import {CooldownFlexLenderStrategy, ERC20, IERC4626} from "./CooldownStrategy.sol";
+import {CooldownFlexLenderStrategy, ERC20, IERC4626, Math} from "./CooldownStrategy.sol";
 
 /// @title Infinifi Flex Lender Strategy
 /// @author Flex
@@ -65,8 +65,8 @@ contract InfinifiFlexLenderStrategy is CooldownFlexLenderStrategy {
 
     /// @inheritdoc CooldownFlexLenderStrategy
     function pendingRedemptions() public view override returns (uint256) {
-        // Loose siUSD plus the queued iUSD, valued as asset
-        uint256 _receipts = COLLATERAL.convertToAssets(COLLATERAL.balanceOf(address(this))) + queuedReceipts;
+        // siUSD taken in kind plus the queued iUSD, valued as asset
+        uint256 _receipts = COLLATERAL.convertToAssets(takenInKind) + queuedReceipts;
         return _redeemController().receiptToAsset(_receipts);
     }
 
@@ -87,6 +87,9 @@ contract InfinifiFlexLenderStrategy is CooldownFlexLenderStrategy {
     ) external onlyManagement returns (uint256 _assetsOut, uint256 _pendingAssets) {
         // Cap the shares by the loose collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
+
+        // Consume the collateral taken in kind variable
+        takenInKind -= Math.min(_shares, takenInKind);
 
         // siUSD --> iUSD
         uint256 _iusdAmount = GATEWAY.unstake(address(this), _shares);

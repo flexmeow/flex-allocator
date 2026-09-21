@@ -7,7 +7,7 @@ import {ICurveStableSwap} from "../interfaces/ICurveStableSwap.sol";
 import {IFxSave} from "../interfaces/IFxSave.sol";
 import {IFxUSDBasePool} from "../interfaces/IFxUSDBasePool.sol";
 
-import {CooldownFlexLenderStrategy, ERC20} from "./CooldownStrategy.sol";
+import {CooldownFlexLenderStrategy, ERC20, Math} from "./CooldownStrategy.sol";
 
 /// @title fxSAVE Flex Lender Strategy
 /// @author Flex
@@ -80,8 +80,8 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
         // Loose fxUSD, 1:1 with the asset
         _pending = FXUSD.balanceOf(address(this)) / _FXUSD_TO_ASSET_SCALE;
 
-        // Loose fxSAVE and the queued fxBASE assets, valued via fxBASE's nav
-        uint256 _baseAssets = COLLATERAL.convertToAssets(COLLATERAL.balanceOf(address(this))) + queuedBaseAssets;
+        // fxSAVE taken in kind and the queued fxBASE assets, valued via fxBASE's nav
+        uint256 _baseAssets = COLLATERAL.convertToAssets(takenInKind) + queuedBaseAssets;
         if (_baseAssets > 0) _pending += _baseAssets * FXBASE.nav() / _NAV_TO_ASSET_SCALE;
     }
 
@@ -99,6 +99,9 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
     ) external onlyManagement returns (uint256) {
         // Cap the shares by the loose collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
+
+        // Consume the collateral taken in kind variable
+        takenInKind -= Math.min(_shares, takenInKind);
 
         // fxSAVE --> fxBASE, queued for redemption
         uint256 _baseAssets = IFxSave(address(COLLATERAL)).requestRedeem(_shares);

@@ -8,7 +8,7 @@ import {ILidoWithdrawalQueue} from "../interfaces/ILidoWithdrawalQueue.sol";
 import {IWETH} from "../interfaces/IWETH.sol";
 import {IWstETH} from "../interfaces/IWstETH.sol";
 
-import {CooldownFlexLenderStrategy, ERC20} from "./CooldownStrategy.sol";
+import {CooldownFlexLenderStrategy, ERC20, Math} from "./CooldownStrategy.sol";
 
 /// @title Lido Flex Lender Strategy
 /// @author Flex
@@ -68,8 +68,8 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
 
     /// @inheritdoc CooldownFlexLenderStrategy
     function pendingRedemptions() public view override returns (uint256 _pending) {
-        // Loose wstETH, 1:1 with the asset through stETH
-        _pending = IWstETH(address(COLLATERAL)).getStETHByWstETH(COLLATERAL.balanceOf(address(this)));
+        // wstETH taken in kind, 1:1 with the asset through stETH
+        _pending = IWstETH(address(COLLATERAL)).getStETHByWstETH(takenInKind);
 
         // Unclaimed withdrawal requests
         ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory _statuses =
@@ -93,6 +93,9 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     ) external onlyManagement returns (uint256 _requestId) {
         // Cap the shares by the loose collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
+
+        // Consume the collateral taken in kind variable
+        takenInKind -= Math.min(_shares, takenInKind);
 
         // wstETH --> stETH
         uint256 _pendingAssets = IWstETH(address(COLLATERAL)).unwrap(_shares);
@@ -146,6 +149,9 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     ) external onlyManagement returns (uint256 _assets) {
         // Cap the shares by the loose collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
+
+        // Consume the collateral taken in kind variable
+        takenInKind -= Math.min(_shares, takenInKind);
 
         // wstETH --> stETH
         uint256 _stethAmount = IWstETH(address(COLLATERAL)).unwrap(_shares);

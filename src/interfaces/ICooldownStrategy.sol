@@ -17,6 +17,8 @@ interface ICooldownStrategy is IStrategy {
 
     function ignorePending() external view returns (bool);
 
+    function takenInKind() external view returns (uint256);
+
     // ============================================================================================
     // Management functions
     // ============================================================================================
