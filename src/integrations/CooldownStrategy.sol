@@ -32,7 +32,7 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
     /// @notice Whether reports ignore the pending redemptions, an escape hatch for management
     bool public ignorePending;
 
-    /// @notice Collateral taken in kind and not unwound yet, so that donations do not count as pending
+    /// @notice Collateral taken in kind and not unwound yet. Storage var and not `balanceOf()` to avoid donations issues
     uint256 public takenInKind;
 
     // ============================================================================================
