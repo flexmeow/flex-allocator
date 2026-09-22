@@ -6,7 +6,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IAvantMinting} from "../interfaces/IAvantMinting.sol";
 import {IStakedAvant} from "../interfaces/IStakedAvant.sol";
 
-import {CooldownFlexLenderStrategy, ERC20} from "./CooldownStrategy.sol";
+import {CooldownFlexLenderStrategy, ERC20, Math} from "./CooldownStrategy.sol";
 
 /// @title Avant Flex Lender Strategy
 /// @author Flex
@@ -56,9 +56,9 @@ contract AvantFlexLenderStrategy is CooldownFlexLenderStrategy {
 
     /// @inheritdoc CooldownFlexLenderStrategy
     function pendingRedemptions() public view override returns (uint256 _pending) {
-        // Loose savETH, and what is cooling in the silo. savETH --> avETH
+        // savETH taken in kind, and what is cooling in the silo. savETH --> avETH
         (, uint152 _cooling) = IStakedAvant(address(COLLATERAL)).cooldowns(address(this));
-        _pending = COLLATERAL.convertToAssets(COLLATERAL.balanceOf(address(this))) + _cooling;
+        _pending = COLLATERAL.convertToAssets(takenInKind) + _cooling;
 
         // Loose avETH, waiting to be redeemed
         _pending += AVETH.balanceOf(address(this));
@@ -93,6 +93,9 @@ contract AvantFlexLenderStrategy is CooldownFlexLenderStrategy {
     ) external onlyManagement returns (uint256) {
         // Cap the shares by the loose collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
+
+        // Consume the collateral taken in kind variable
+        takenInKind -= Math.min(_shares, takenInKind);
 
         // savETH --> avETH, into the silo
         return IStakedAvant(address(COLLATERAL)).cooldownShares(_shares);
