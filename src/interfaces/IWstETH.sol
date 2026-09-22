@@ -9,4 +9,8 @@ interface IWstETH {
 
     function stETH() external view returns (address);
 
+    function getStETHByWstETH(
+        uint256 _wstETHAmount
+    ) external view returns (uint256);
+
 }

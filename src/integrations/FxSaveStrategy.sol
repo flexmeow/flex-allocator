@@ -7,7 +7,7 @@ import {ICurveStableSwap} from "../interfaces/ICurveStableSwap.sol";
 import {IFxSave} from "../interfaces/IFxSave.sol";
 import {IFxUSDBasePool} from "../interfaces/IFxUSDBasePool.sol";
 
-import {CooldownFlexLenderStrategy, ERC20} from "./CooldownStrategy.sol";
+import {CooldownFlexLenderStrategy, ERC20, Math} from "./CooldownStrategy.sol";
 
 /// @title fxSAVE Flex Lender Strategy
 /// @author Flex
@@ -29,6 +29,9 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
     /// @notice Scales an 18-decimals fxBASE amount valued by the 18-decimals nav to 6-decimals asset terms
     uint256 internal constant _NAV_TO_ASSET_SCALE = 1e30;
 
+    /// @notice Scales an 18-decimals fxUSD amount to 6-decimals asset terms
+    uint256 internal constant _FXUSD_TO_ASSET_SCALE = 1e12;
+
     /// @notice USDC token
     address public constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 
@@ -40,6 +43,13 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
 
     /// @notice Curve USDC/fxUSD pool
     ICurveStableSwap public constant CURVE_POOL = ICurveStableSwap(0x5018BE882DccE5E3F2f3B0913AE2096B9b3fB61f);
+
+    // ============================================================================================
+    // Storage
+    // ============================================================================================
+
+    /// @notice fxBASE assets queued in fxBASE's redemption queue
+    uint256 public queuedBaseAssets;
 
     // ============================================================================================
     // Constructor
@@ -62,6 +72,20 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
     }
 
     // ============================================================================================
+    // Public view functions
+    // ============================================================================================
+
+    /// @inheritdoc CooldownFlexLenderStrategy
+    function pendingRedemptions() public view override returns (uint256 _pending) {
+        // Loose fxUSD, 1:1 with the asset
+        _pending = FXUSD.balanceOf(address(this)) / _FXUSD_TO_ASSET_SCALE;
+
+        // fxSAVE taken in kind and the queued fxBASE assets, valued via fxBASE's nav
+        uint256 _baseAssets = COLLATERAL.convertToAssets(takenInKind) + queuedBaseAssets;
+        if (_baseAssets > 0) _pending += _baseAssets * FXBASE.nav() / _NAV_TO_ASSET_SCALE;
+    }
+
+    // ============================================================================================
     // Cooldown
     // ============================================================================================
 
@@ -69,19 +93,22 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
     /// @dev Only callable by management
     /// @dev Requests accumulate, but every request resets the unlock clock for the whole queued amount
     /// @param _shares The amount of fxSAVE to unwind, capped by the loose balance
-    /// @return _pendingAssets The amount of asset queued in fxBASE's redemption queue
+    /// @return The amount of asset queued in fxBASE's redemption queue
     function initiateCooldown(
         uint256 _shares
-    ) external onlyManagement returns (uint256 _pendingAssets) {
+    ) external onlyManagement returns (uint256) {
         // Cap the shares by the loose collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
 
+        // Consume the collateral taken in kind variable
+        takenInKind -= Math.min(_shares, takenInKind);
+
         // fxSAVE --> fxBASE, queued for redemption
         uint256 _baseAssets = IFxSave(address(COLLATERAL)).requestRedeem(_shares);
+        queuedBaseAssets += _baseAssets;
 
-        // Record the queued amount, valued in asset terms via fxBASE's nav
-        _pendingAssets = _baseAssets * FXBASE.nav() / _NAV_TO_ASSET_SCALE;
-        pendingRedemptions += _pendingAssets;
+        // Valued in asset terms via fxBASE's nav
+        return _baseAssets * FXBASE.nav() / _NAV_TO_ASSET_SCALE;
     }
 
     /// @notice Claim the queued redemption from fxBASE once the cooldown passed
@@ -90,10 +117,10 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
     /// @return _assetsOut The amount of asset received
     /// @return _fxusdOut The amount of fxUSD received
     function claimCooldown() external onlyManagement returns (uint256 _assetsOut, uint256 _fxusdOut) {
-        require(pendingRedemptions > 0, "!pending");
+        require(queuedBaseAssets > 0, "!pending");
 
         // The claim always empties the queue
-        pendingRedemptions = 0;
+        queuedBaseAssets = 0;
 
         // Claim the whole queued amount
         uint256 _preAssetBalance = asset.balanceOf(address(this));

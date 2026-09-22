@@ -7,8 +7,6 @@ import "../Base.sol";
 
 abstract contract CooldownStrategyTests is Base {
 
-    using stdStorage for StdStorage;
-
     // The strategy under test, set in `_deployStrategy`
     ICooldownStrategy public cooldownStrategy;
 
@@ -59,35 +57,69 @@ abstract contract CooldownStrategyTests is Base {
         assertEq(LENDER.balanceOf(address(strategy)), 0, "E2");
     }
 
+    // Collateral taken in kind is pending from the take on, so reports are blocked before any
+    // cooldown is even started
     function test_report_blockedWhilePending(
-        uint256 _pending
+        uint256 _amount
     ) public {
-        _pending = bound(_pending, 1, type(uint128).max);
-        stdstore.target(address(cooldownStrategy)).sig("pendingRedemptions()").checked_write(_pending);
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        _freeInKind(_amount);
+        assertApproxEqRel(cooldownStrategy.pendingRedemptions(), _amount, 1e16, "E0"); // 1%
+        assertEq(cooldownStrategy.takenInKind(), _collateral().balanceOf(address(strategy)), "E1");
 
         vm.prank(keeper);
         vm.expectRevert("!cooldown");
         strategy.report();
     }
 
-    function test_zeroPendingRedemptions(
-        uint256 _pending
+    // Donated collateral was not taken in kind, so it is not pending and cannot block reports
+    function test_donation_notPending(
+        uint256 _amount
     ) public {
-        _pending = bound(_pending, 1, type(uint128).max);
-        stdstore.target(address(cooldownStrategy)).sig("pendingRedemptions()").checked_write(_pending);
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
 
-        vm.prank(management);
-        cooldownStrategy.zeroPendingRedemptions();
-        assertEq(cooldownStrategy.pendingRedemptions(), 0, "E0");
+        airdrop(_collateral(), address(strategy), _amount);
+        assertEq(cooldownStrategy.takenInKind(), 0, "E0");
+        assertEq(cooldownStrategy.pendingRedemptions(), 0, "E1");
+
+        vm.prank(keeper);
+        strategy.report();
     }
 
-    function test_zeroPendingRedemptions_wrongCaller(
+    function test_pendingDust() public view {
+        assertEq(cooldownStrategy.PENDING_DUST(), 10 ** (asset.decimals() / 2), "E0");
+    }
+
+    function test_setIgnorePending(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        _freeInKind(_amount);
+
+        // Reports are blocked until management ignores the pending redemptions
+        vm.prank(keeper);
+        vm.expectRevert("!cooldown");
+        strategy.report();
+
+        vm.startPrank(management);
+        cooldownStrategy.setIgnorePending(true);
+        strategy.setDoHealthCheck(false); // the in-kind collateral is not counted, so the report books a loss
+        vm.stopPrank();
+        assertTrue(cooldownStrategy.ignorePending(), "E0");
+
+        vm.prank(keeper);
+        strategy.report();
+    }
+
+    function test_setIgnorePending_wrongCaller(
         address _wrongCaller
     ) public {
         vm.assume(_wrongCaller != management);
         vm.prank(_wrongCaller);
         vm.expectRevert("!management");
-        cooldownStrategy.zeroPendingRedemptions();
+        cooldownStrategy.setIgnorePending(true);
     }
 
     // ============================================================================================

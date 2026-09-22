@@ -11,7 +11,21 @@ interface ICooldownStrategy is IStrategy {
 
     function COLLATERAL() external view returns (address);
 
+    function PENDING_DUST() external view returns (uint256);
+
     function pendingRedemptions() external view returns (uint256);
+
+    function ignorePending() external view returns (bool);
+
+    function takenInKind() external view returns (uint256);
+
+    // ============================================================================================
+    // Management functions
+    // ============================================================================================
+
+    function setIgnorePending(
+        bool _ignorePending
+    ) external;
 
     // ============================================================================================
     // Cooldown
@@ -21,7 +35,5 @@ interface ICooldownStrategy is IStrategy {
         uint256 _amount,
         uint256 _minOut
     ) external returns (uint256);
-
-    function zeroPendingRedemptions() external;
 
 }
