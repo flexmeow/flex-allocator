@@ -430,6 +430,28 @@ contract StrategyTests is Base {
         assertEq(asset.balanceOf(address(strategy)), 0, "E1");
     }
 
+    function test_availableDepositLimit_subtractsIdle(
+        uint256 _idle,
+        uint256 _lenderHeadroom
+    ) public {
+        _idle = bound(_idle, minFuzzAmount, maxFuzzAmount / 2);
+        _lenderHeadroom = bound(_lenderHeadroom, _idle + minFuzzAmount, maxFuzzAmount);
+
+        airdrop(asset, address(strategy), _idle);
+
+        vm.startPrank(LENDER.management());
+        LENDER.setDepositLimit(LENDER.totalAssets() + _lenderHeadroom);
+        vm.stopPrank();
+
+        // The idle eats into the advertised limit, and a deposit at that limit goes through, sweeping the idle
+        uint256 _max = strategy.maxDeposit(user);
+        assertEq(_max, _lenderHeadroom - _idle, "E0");
+        mintAndDepositIntoStrategy(strategy, user, _max);
+
+        assertEq(asset.balanceOf(address(strategy)), 0, "E1");
+        assertEq(strategy.maxDeposit(user), 0, "E2");
+    }
+
     function test_deployIdleFunds_capsByLenderLimit(
         uint256 _idle,
         uint256 _lenderHeadroom

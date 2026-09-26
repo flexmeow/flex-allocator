@@ -101,7 +101,14 @@ contract FlexLenderStrategy is BaseHealthCheck {
     function availableDepositLimit(
         address _owner
     ) public view override returns (uint256) {
-        return Math.min(super.availableDepositLimit(_owner), LENDER.maxDeposit(address(this)));
+        // The Lender's deposit limit
+        uint256 _lenderDepositLimit = LENDER.maxDeposit(address(this));
+
+        // Subtract any idle asset we have
+        _lenderDepositLimit -= Math.min(asset.balanceOf(address(this)), _lenderDepositLimit);
+
+        // Cap by the base's limit
+        return Math.min(super.availableDepositLimit(_owner), _lenderDepositLimit);
     }
 
     /// @inheritdoc BaseStrategy
