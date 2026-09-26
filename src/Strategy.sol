@@ -111,8 +111,8 @@ contract FlexLenderStrategy is BaseHealthCheck {
         // If a `_proceedsReceiver` is set, there is no limit
         if (_proceedsReceiver != address(0)) return type(uint256).max;
 
-        // Otherwise only what can be withdrawn from idle liquidity
-        return asset.balanceOf(address(this)) + asset.balanceOf(address(LENDER));
+        // Otherwise only what can be withdrawn from idle liquidity, capped by what our Lender shares are worth
+        return asset.balanceOf(address(this)) + Math.min(asset.balanceOf(address(LENDER)), LENDER.maxWithdraw(address(this)));
     }
 
     // ============================================================================================
