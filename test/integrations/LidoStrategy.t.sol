@@ -2,6 +2,8 @@
 pragma solidity 0.8.30;
 
 import {LidoFlexLenderStrategy} from "../../src/integrations/LidoStrategy.sol";
+import {ILidoWithdrawalQueue} from "../../src/interfaces/ILidoWithdrawalQueue.sol";
+import {IWstETH} from "../../src/interfaces/IWstETH.sol";
 
 import {ILidoQueue} from "../interfaces/ILidoQueue.sol";
 import {IStETH} from "../interfaces/IStETH.sol";
@@ -122,7 +124,31 @@ contract LidoStrategyTests is CooldownStrategyTests {
 
         assertEq(asset.balanceOf(address(strategy)), _balanceBefore + _claimed, "E1");
         assertApproxEqRel(_claimed, _pending, 1e15, "E2"); // 0.1%
-        assertEq(lidoStrategy.pendingRedemptions(), 0, "E3");
+        assertEq(lidoStrategy.queuedSteth(), 0, "E3");
+        assertEq(lidoStrategy.pendingRedemptions(), 0, "E4");
+    }
+
+    function test_donation_request_notPending(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, 1 ether, 500 ether); // under Lido's max request
+
+        // An outsider queues a withdrawal request owned by the strategy
+        address _outsider = makeAddr("outsider");
+        ILidoWithdrawalQueue _queue = lidoStrategy.WITHDRAWAL_QUEUE();
+        airdrop(ERC20(WSTETH), _outsider, _amount);
+        vm.startPrank(_outsider);
+        uint256[] memory _amounts = new uint256[](1);
+        _amounts[0] = IWstETH(WSTETH).unwrap(_amount);
+        ERC20(STETH).approve(address(_queue), _amounts[0]);
+        _queue.requestWithdrawals(_amounts, address(strategy));
+        vm.stopPrank();
+
+        // It is not pending and does not block reports
+        assertEq(lidoStrategy.queuedSteth(), 0, "E0");
+        assertEq(lidoStrategy.pendingRedemptions(), 0, "E1");
+        vm.prank(keeper);
+        strategy.report();
     }
 
     function test_initiateCooldown_wrongCaller(
@@ -171,7 +197,8 @@ contract LidoStrategyTests is CooldownStrategyTests {
 
         assertEq(asset.balanceOf(address(strategy)), _balanceBefore + _claimed, "E1");
         assertApproxEqRel(_claimed, _pending, 1e15, "E2"); // 0.1%
-        assertEq(lidoStrategy.pendingRedemptions(), 0, "E3");
+        assertEq(lidoStrategy.queuedSteth(), 0, "E3");
+        assertEq(lidoStrategy.pendingRedemptions(), 0, "E4");
     }
 
     function test_claimCooldown_withHints_wrongCaller(

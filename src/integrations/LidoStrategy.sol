@@ -39,6 +39,13 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     ICurveStableSwap public constant CURVE_POOL = ICurveStableSwap(0xDC24316b9AE028F1497c275EB9192a3Ea0f67022);
 
     // ============================================================================================
+    // Storage
+    // ============================================================================================
+
+    /// @notice stETH queued in Lido's withdrawal queue. Storage var and not the queue's list to avoid unsolicited requests issues
+    uint256 public queuedSteth;
+
+    // ============================================================================================
     // Constructor
     // ============================================================================================
 
@@ -67,16 +74,9 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     // ============================================================================================
 
     /// @inheritdoc CooldownFlexLenderStrategy
-    function pendingRedemptions() public view override returns (uint256 _pending) {
-        // wstETH taken in kind, 1:1 with the asset through stETH
-        _pending = IWstETH(address(COLLATERAL)).getStETHByWstETH(takenInKind);
-
-        // Unclaimed withdrawal requests
-        ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory _statuses =
-            WITHDRAWAL_QUEUE.getWithdrawalStatus(WITHDRAWAL_QUEUE.getWithdrawalRequests(address(this)));
-        for (uint256 i; i < _statuses.length; ++i) {
-            if (!_statuses[i].isClaimed) _pending += _statuses[i].amountOfStETH;
-        }
+    function pendingRedemptions() public view override returns (uint256) {
+        // wstETH taken in kind plus the queued stETH, 1:1 with the asset
+        return IWstETH(address(COLLATERAL)).getStETHByWstETH(takenInKind) + queuedSteth;
     }
 
     // ============================================================================================
@@ -100,6 +100,9 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
         // wstETH --> stETH
         uint256 _pendingAssets = IWstETH(address(COLLATERAL)).unwrap(_shares);
 
+        // Record the queued stETH
+        queuedSteth += _pendingAssets;
+
         // Queue the stETH for withdrawal
         uint256[] memory _amounts = new uint256[](1);
         _amounts[0] = _pendingAssets;
@@ -113,6 +116,11 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     function claimCooldown(
         uint256 _requestId
     ) external onlyManagement returns (uint256 _assets) {
+        // Consume the queued stETH variable
+        uint256[] memory _requestIds = new uint256[](1);
+        _requestIds[0] = _requestId;
+        queuedSteth -= Math.min(WITHDRAWAL_QUEUE.getWithdrawalStatus(_requestIds)[0].amountOfStETH, queuedSteth);
+
         // Claim the withdrawal and wrap the received ETH
         uint256 _preBalance = asset.balanceOf(address(this));
         WITHDRAWAL_QUEUE.claimWithdrawal(_requestId);
@@ -130,6 +138,14 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
         uint256[] calldata _requestIds,
         uint256[] calldata _hints
     ) external onlyManagement returns (uint256 _assets) {
+        // Consume the queued stETH variable
+        ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory _statuses = WITHDRAWAL_QUEUE.getWithdrawalStatus(_requestIds);
+        uint256 _claimedSteth;
+        for (uint256 i; i < _statuses.length; ++i) {
+            _claimedSteth += _statuses[i].amountOfStETH;
+        }
+        queuedSteth -= Math.min(_claimedSteth, queuedSteth);
+
         // Claim the withdrawals and wrap the received ETH
         uint256 _preBalance = asset.balanceOf(address(this));
         WITHDRAWAL_QUEUE.claimWithdrawals(_requestIds, _hints);

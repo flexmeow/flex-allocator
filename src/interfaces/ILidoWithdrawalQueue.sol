@@ -12,10 +12,6 @@ interface ILidoWithdrawalQueue {
         bool isClaimed;
     }
 
-    function getWithdrawalRequests(
-        address _owner
-    ) external view returns (uint256[] memory);
-
     function getWithdrawalStatus(
         uint256[] calldata _requestIds
     ) external view returns (WithdrawalRequestStatus[] memory);
