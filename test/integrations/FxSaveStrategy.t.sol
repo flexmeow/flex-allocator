@@ -114,18 +114,33 @@ contract FxSaveStrategyTests is CooldownStrategyTests {
 
         // The claim is worth ~ the queued amount, valuing fxUSD at $1. The fxUSD leg stays pending
         assertApproxEqRel(_assetsOut + _fxusdOut / 1e12, _pending, 1e16, "E1"); // 1%
-        assertEq(fxSaveStrategy.pendingRedemptions(), _fxusdOut / 1e12, "E2");
+        assertEq(fxSaveStrategy.claimedFxusd(), _fxusdOut, "E2");
+        assertEq(fxSaveStrategy.pendingRedemptions(), _fxusdOut / 1e12, "E3");
 
         // Swap any fxUSD leg back to the asset
         if (_fxusdOut > 0) {
             uint256 _balanceBefore = asset.balanceOf(address(strategy));
             vm.prank(management);
             uint256 _swapped = fxSaveStrategy.swapFxUsd(type(uint256).max, 0);
-            assertEq(asset.balanceOf(address(strategy)), _balanceBefore + _swapped, "E3");
-            assertApproxEqRel(_swapped, _fxusdOut / 1e12, 2e16, "E4"); // 2%
-            assertEq(ERC20(FXUSD).balanceOf(address(strategy)), 0, "E5");
-            assertEq(fxSaveStrategy.pendingRedemptions(), 0, "E6");
+            assertEq(asset.balanceOf(address(strategy)), _balanceBefore + _swapped, "E4");
+            assertApproxEqRel(_swapped, _fxusdOut / 1e12, 2e16, "E5"); // 2%
+            assertEq(ERC20(FXUSD).balanceOf(address(strategy)), 0, "E6");
+            assertEq(fxSaveStrategy.claimedFxusd(), 0, "E7");
+            assertEq(fxSaveStrategy.pendingRedemptions(), 0, "E8");
         }
+    }
+
+    function test_donation_fxusd_notPending(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, 100e18, 100_000e18); // 100 to 100k fxUSD
+
+        airdrop(ERC20(FXUSD), address(strategy), _amount);
+        assertEq(fxSaveStrategy.claimedFxusd(), 0, "E0");
+        assertEq(fxSaveStrategy.pendingRedemptions(), 0, "E1");
+
+        vm.prank(keeper);
+        strategy.report();
     }
 
     function test_swapFxUsd(

@@ -51,6 +51,9 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
     /// @notice fxBASE assets queued in fxBASE's redemption queue
     uint256 public queuedBaseAssets;
 
+    /// @notice fxUSD claimed from the queue and not swapped yet. Storage var and not `balanceOf()` to avoid donations issues
+    uint256 public claimedFxusd;
+
     // ============================================================================================
     // Constructor
     // ============================================================================================
@@ -77,8 +80,8 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
 
     /// @inheritdoc CooldownFlexLenderStrategy
     function pendingRedemptions() public view override returns (uint256 _pending) {
-        // Loose fxUSD, 1:1 with the asset
-        _pending = FXUSD.balanceOf(address(this)) / _FXUSD_TO_ASSET_SCALE;
+        // Claimed fxUSD, 1:1 with the asset
+        _pending = claimedFxusd / _FXUSD_TO_ASSET_SCALE;
 
         // fxSAVE taken in kind and the queued fxBASE assets, valued via fxBASE's nav
         uint256 _baseAssets = COLLATERAL.convertToAssets(takenInKind) + queuedBaseAssets;
@@ -129,6 +132,9 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
         _assetsOut = asset.balanceOf(address(this)) - _preAssetBalance;
         _fxusdOut = FXUSD.balanceOf(address(this)) - _preFxusdBalance;
         require(_assetsOut + _fxusdOut > 0, "!assets");
+
+        // Record the claimed fxUSD
+        claimedFxusd += _fxusdOut;
     }
 
     /// @notice Swap loose fxUSD to the asset through Curve
@@ -142,6 +148,9 @@ contract FxSaveFlexLenderStrategy is CooldownFlexLenderStrategy {
     ) external onlyManagement returns (uint256) {
         // Cap the amount by the loose fxUSD balance
         _amount = _capToBalance(FXUSD, _amount);
+
+        // Consume the claimed fxUSD variable
+        claimedFxusd -= Math.min(_amount, claimedFxusd);
 
         // fxUSD --> asset
         return CURVE_POOL.exchange(_FXUSD_INDEX, _USDC_INDEX, _amount, _minOut);
