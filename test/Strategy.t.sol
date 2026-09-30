@@ -430,6 +430,28 @@ contract StrategyTests is Base {
         assertEq(asset.balanceOf(address(strategy)), 0, "E1");
     }
 
+    function test_availableDepositLimit_subtractsIdle(
+        uint256 _idle,
+        uint256 _lenderHeadroom
+    ) public {
+        _idle = bound(_idle, minFuzzAmount, maxFuzzAmount / 2);
+        _lenderHeadroom = bound(_lenderHeadroom, _idle + minFuzzAmount, maxFuzzAmount);
+
+        airdrop(asset, address(strategy), _idle);
+
+        vm.startPrank(LENDER.management());
+        LENDER.setDepositLimit(LENDER.totalAssets() + _lenderHeadroom);
+        vm.stopPrank();
+
+        // The idle eats into the advertised limit, and a deposit at that limit goes through, sweeping the idle
+        uint256 _max = strategy.maxDeposit(user);
+        assertEq(_max, _lenderHeadroom - _idle, "E0");
+        mintAndDepositIntoStrategy(strategy, user, _max);
+
+        assertEq(asset.balanceOf(address(strategy)), 0, "E1");
+        assertEq(strategy.maxDeposit(user), 0, "E2");
+    }
+
     function test_deployIdleFunds_capsByLenderLimit(
         uint256 _idle,
         uint256 _lenderHeadroom
@@ -516,6 +538,27 @@ contract StrategyTests is Base {
         uint256 _lenderIdle = asset.balanceOf(address(LENDER));
         assertLt(_lenderIdle, _amount, "lender still has idle");
         assertEq(strategy.availableWithdrawLimit(user), _lenderIdle, "E0");
+    }
+
+    function test_availableWithdrawLimit_capsByLenderShares(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drop the Lender's share price, unreported by the strategy. The Lender's idle stays whole
+        _dropLenderSharePrice();
+        uint256 _value = LENDER.maxWithdraw(address(strategy));
+        assertLt(_value, asset.balanceOf(address(LENDER)), "lender idle below value");
+        assertEq(strategy.availableWithdrawLimit(user), _value, "E0");
+
+        // Only what our shares are worth is advertised, and that exit goes through
+        uint256 _shares = strategy.maxRedeem(user);
+        assertLt(_shares, strategy.balanceOf(user), "E1");
+        vm.prank(user);
+        uint256 _assets = strategy.redeem(_shares, user, user);
+        assertApproxEqAbs(_assets, _value, 1, "E2");
     }
 
     function test_setOpen_wrongCaller(
@@ -686,7 +729,7 @@ contract StrategyTests is Base {
         _vault.update_debt(address(strategy), 0);
 
         assertEq(asset.balanceOf(_debtManager), _managerBefore, "E0");
-        assertApproxEqAbs(asset.balanceOf(address(_vault)), _amount, 1, "E1");
+        assertApproxEqAbs(asset.balanceOf(address(_vault)), _amount, 100, "E1"); // rounding at the Lender's share price
     }
 
     // The router clears the receiver before returning, so a debt manager cannot arm the strategy with a

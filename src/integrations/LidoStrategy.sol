@@ -8,7 +8,7 @@ import {ILidoWithdrawalQueue} from "../interfaces/ILidoWithdrawalQueue.sol";
 import {IWETH} from "../interfaces/IWETH.sol";
 import {IWstETH} from "../interfaces/IWstETH.sol";
 
-import {CooldownFlexLenderStrategy, ERC20} from "./CooldownStrategy.sol";
+import {CooldownFlexLenderStrategy, ERC20, Math} from "./CooldownStrategy.sol";
 
 /// @title Lido Flex Lender Strategy
 /// @author Flex
@@ -42,8 +42,8 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     // Storage
     // ============================================================================================
 
-    /// @notice Asset amount queued per withdrawal request
-    mapping(uint256 => uint256) public requestAmounts;
+    /// @notice stETH queued in Lido's withdrawal queue. Storage var and not the queue's list to avoid unsolicited requests issues
+    uint256 public queuedSteth;
 
     // ============================================================================================
     // Constructor
@@ -70,6 +70,16 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     receive() external payable {}
 
     // ============================================================================================
+    // Public view functions
+    // ============================================================================================
+
+    /// @inheritdoc CooldownFlexLenderStrategy
+    function pendingRedemptions() public view override returns (uint256) {
+        // wstETH taken in kind plus the queued stETH, 1:1 with the asset
+        return IWstETH(address(COLLATERAL)).getStETHByWstETH(takenInKind) + queuedSteth;
+    }
+
+    // ============================================================================================
     // Cooldown
     // ============================================================================================
 
@@ -84,17 +94,19 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
         // Cap the shares by the loose collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
 
+        // Consume the collateral taken in kind variable
+        takenInKind -= Math.min(_shares, takenInKind);
+
         // wstETH --> stETH
         uint256 _pendingAssets = IWstETH(address(COLLATERAL)).unwrap(_shares);
+
+        // Record the queued stETH
+        queuedSteth += _pendingAssets;
 
         // Queue the stETH for withdrawal
         uint256[] memory _amounts = new uint256[](1);
         _amounts[0] = _pendingAssets;
         _requestId = WITHDRAWAL_QUEUE.requestWithdrawals(_amounts, address(this))[0];
-
-        // Record the queued amount
-        requestAmounts[_requestId] = _pendingAssets;
-        pendingRedemptions += _pendingAssets;
     }
 
     /// @notice Claim a finalized withdrawal request from Lido
@@ -104,17 +116,39 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     function claimCooldown(
         uint256 _requestId
     ) external onlyManagement returns (uint256 _assets) {
-        // Make sure the request is one of ours
-        uint256 _queued = requestAmounts[_requestId];
-        require(_queued > 0, "!request");
-
-        // Delete the request and settle its queued amount
-        delete requestAmounts[_requestId];
-        pendingRedemptions = _queued >= pendingRedemptions ? 0 : pendingRedemptions - _queued;
+        // Consume the queued stETH variable
+        uint256[] memory _requestIds = new uint256[](1);
+        _requestIds[0] = _requestId;
+        queuedSteth -= Math.min(WITHDRAWAL_QUEUE.getWithdrawalStatus(_requestIds)[0].amountOfStETH, queuedSteth);
 
         // Claim the withdrawal and wrap the received ETH
         uint256 _preBalance = asset.balanceOf(address(this));
         WITHDRAWAL_QUEUE.claimWithdrawal(_requestId);
+        if (address(this).balance > 0) IWETH(WETH).deposit{value: address(this).balance}();
+        _assets = asset.balanceOf(address(this)) - _preBalance;
+        require(_assets > 0, "!assets");
+    }
+
+    /// @notice Claim finalized withdrawal requests from Lido, with checkpoint hints
+    /// @dev Only callable by management
+    /// @param _requestIds The withdrawal request ids to claim
+    /// @param _hints The checkpoint hints, from the queue's `findCheckpointHints`
+    /// @return _assets The amount of asset claimed
+    function claimCooldown(
+        uint256[] calldata _requestIds,
+        uint256[] calldata _hints
+    ) external onlyManagement returns (uint256 _assets) {
+        // Consume the queued stETH variable
+        ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory _statuses = WITHDRAWAL_QUEUE.getWithdrawalStatus(_requestIds);
+        uint256 _claimedSteth;
+        for (uint256 i; i < _statuses.length; ++i) {
+            _claimedSteth += _statuses[i].amountOfStETH;
+        }
+        queuedSteth -= Math.min(_claimedSteth, queuedSteth);
+
+        // Claim the withdrawals and wrap the received ETH
+        uint256 _preBalance = asset.balanceOf(address(this));
+        WITHDRAWAL_QUEUE.claimWithdrawals(_requestIds, _hints);
         if (address(this).balance > 0) IWETH(WETH).deposit{value: address(this).balance}();
         _assets = asset.balanceOf(address(this)) - _preBalance;
         require(_assets > 0, "!assets");
@@ -131,6 +165,9 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
     ) external onlyManagement returns (uint256 _assets) {
         // Cap the shares by the loose collateral balance
         _shares = _capToBalance(COLLATERAL, _shares);
+
+        // Consume the collateral taken in kind variable
+        takenInKind -= Math.min(_shares, takenInKind);
 
         // wstETH --> stETH
         uint256 _stethAmount = IWstETH(address(COLLATERAL)).unwrap(_shares);

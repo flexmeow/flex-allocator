@@ -101,7 +101,14 @@ contract FlexLenderStrategy is BaseHealthCheck {
     function availableDepositLimit(
         address _owner
     ) public view override returns (uint256) {
-        return Math.min(super.availableDepositLimit(_owner), LENDER.maxDeposit(address(this)));
+        // The Lender's deposit limit
+        uint256 _lenderDepositLimit = LENDER.maxDeposit(address(this));
+
+        // Subtract any idle asset we have
+        _lenderDepositLimit -= Math.min(asset.balanceOf(address(this)), _lenderDepositLimit);
+
+        // Cap by the base's limit
+        return Math.min(super.availableDepositLimit(_owner), _lenderDepositLimit);
     }
 
     /// @inheritdoc BaseStrategy
@@ -111,8 +118,8 @@ contract FlexLenderStrategy is BaseHealthCheck {
         // If a `_proceedsReceiver` is set, there is no limit
         if (_proceedsReceiver != address(0)) return type(uint256).max;
 
-        // Otherwise only what can be withdrawn from idle liquidity
-        return asset.balanceOf(address(this)) + asset.balanceOf(address(LENDER));
+        // Otherwise only what can be withdrawn from idle liquidity, capped by what our Lender shares are worth
+        return asset.balanceOf(address(this)) + Math.min(asset.balanceOf(address(LENDER)), LENDER.maxWithdraw(address(this)));
     }
 
     // ============================================================================================

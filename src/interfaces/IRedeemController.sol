@@ -11,4 +11,6 @@ interface IRedeemController {
         address _user
     ) external view returns (uint256);
 
+    function totalEnqueuedRedemptions() external view returns (uint256);
+
 }

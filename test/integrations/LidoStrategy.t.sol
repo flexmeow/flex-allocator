@@ -2,6 +2,8 @@
 pragma solidity 0.8.30;
 
 import {LidoFlexLenderStrategy} from "../../src/integrations/LidoStrategy.sol";
+import {ILidoWithdrawalQueue} from "../../src/interfaces/ILidoWithdrawalQueue.sol";
+import {IWstETH} from "../../src/interfaces/IWstETH.sol";
 
 import {ILidoQueue} from "../interfaces/ILidoQueue.sol";
 import {IStETH} from "../interfaces/IStETH.sol";
@@ -83,7 +85,7 @@ contract LidoStrategyTests is CooldownStrategyTests {
 
         uint256 _loose = _freeInKind(_amount);
 
-        // Queue two withdrawal requests, the pending amount accumulates
+        // Queue two withdrawal requests. The pending amount only moves from loose to queued
         vm.startPrank(management);
         uint256 _firstId = lidoStrategy.initiateCooldown(_loose / 2);
         uint256 _firstPending = lidoStrategy.pendingRedemptions();
@@ -92,7 +94,7 @@ contract LidoStrategyTests is CooldownStrategyTests {
 
         assertGt(_firstPending, 0, "E0");
         assertGt(_secondId, _firstId, "E1");
-        assertGt(lidoStrategy.pendingRedemptions(), _firstPending, "E2");
+        assertApproxEqAbs(lidoStrategy.pendingRedemptions(), _firstPending, 10, "E2");
         assertEq(ERC20(WSTETH).balanceOf(address(strategy)), 0, "E3");
 
         // The queued stETH is worth ~ the freed amount (1:1 redemption)
@@ -122,8 +124,31 @@ contract LidoStrategyTests is CooldownStrategyTests {
 
         assertEq(asset.balanceOf(address(strategy)), _balanceBefore + _claimed, "E1");
         assertApproxEqRel(_claimed, _pending, 1e15, "E2"); // 0.1%
-        assertEq(lidoStrategy.pendingRedemptions(), 0, "E3");
-        assertEq(lidoStrategy.requestAmounts(_requestId), 0, "E4");
+        assertEq(lidoStrategy.queuedSteth(), 0, "E3");
+        assertEq(lidoStrategy.pendingRedemptions(), 0, "E4");
+    }
+
+    function test_donation_request_notPending(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, 1 ether, 500 ether); // under Lido's max request
+
+        // An outsider queues a withdrawal request owned by the strategy
+        address _outsider = makeAddr("outsider");
+        ILidoWithdrawalQueue _queue = lidoStrategy.WITHDRAWAL_QUEUE();
+        airdrop(ERC20(WSTETH), _outsider, _amount);
+        vm.startPrank(_outsider);
+        uint256[] memory _amounts = new uint256[](1);
+        _amounts[0] = IWstETH(WSTETH).unwrap(_amount);
+        ERC20(STETH).approve(address(_queue), _amounts[0]);
+        _queue.requestWithdrawals(_amounts, address(strategy));
+        vm.stopPrank();
+
+        // It is not pending and does not block reports
+        assertEq(lidoStrategy.queuedSteth(), 0, "E0");
+        assertEq(lidoStrategy.pendingRedemptions(), 0, "E1");
+        vm.prank(keeper);
+        strategy.report();
     }
 
     function test_initiateCooldown_wrongCaller(
@@ -139,8 +164,50 @@ contract LidoStrategyTests is CooldownStrategyTests {
         uint256 _requestId
     ) public {
         vm.prank(management);
-        vm.expectRevert("!request");
+        vm.expectRevert();
         lidoStrategy.claimCooldown(_requestId);
+    }
+
+    function test_claimCooldown_withHints(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        _freeInKind(_amount);
+
+        // Queue the withdrawal
+        vm.prank(management);
+        uint256 _requestId = lidoStrategy.initiateCooldown(type(uint256).max);
+        uint256 _pending = lidoStrategy.pendingRedemptions();
+        assertGt(_pending, 0, "E0");
+
+        // Finalize the request as Lido
+        _finalizeLidoRequest(_requestId);
+
+        // Find the checkpoint hints, as an off-chain caller would
+        ILidoQueue _queue = ILidoQueue(address(lidoStrategy.WITHDRAWAL_QUEUE()));
+        uint256[] memory _requestIds = new uint256[](1);
+        _requestIds[0] = _requestId;
+        uint256[] memory _hints = _queue.findCheckpointHints(_requestIds, 1, _queue.getLastCheckpointIndex());
+
+        // Claim the withdrawal with the hints
+        uint256 _balanceBefore = asset.balanceOf(address(strategy));
+        vm.prank(management);
+        uint256 _claimed = lidoStrategy.claimCooldown(_requestIds, _hints);
+
+        assertEq(asset.balanceOf(address(strategy)), _balanceBefore + _claimed, "E1");
+        assertApproxEqRel(_claimed, _pending, 1e15, "E2"); // 0.1%
+        assertEq(lidoStrategy.queuedSteth(), 0, "E3");
+        assertEq(lidoStrategy.pendingRedemptions(), 0, "E4");
+    }
+
+    function test_claimCooldown_withHints_wrongCaller(
+        address _wrongCaller
+    ) public {
+        vm.assume(_wrongCaller != management);
+        vm.prank(_wrongCaller);
+        vm.expectRevert("!management");
+        lidoStrategy.claimCooldown(new uint256[](0), new uint256[](0));
     }
 
     function test_claimCooldown_wrongCaller(

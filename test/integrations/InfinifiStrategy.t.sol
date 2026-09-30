@@ -11,8 +11,6 @@ import "./CooldownBase.sol";
 
 contract InfinifiStrategyTests is CooldownStrategyTests {
 
-    using stdStorage for StdStorage;
-
     InfinifiFlexLenderStrategy public infinifiStrategy;
 
     // Tokens
@@ -105,17 +103,6 @@ contract InfinifiStrategyTests is CooldownStrategyTests {
         assertEq(ERC20(SIUSD).balanceOf(address(strategy)), 0, "E1");
         assertApproxEqRel(_assetsOut + _pending, _amount, 1e16, "E2"); // 1%
         assertEq(infinifiStrategy.pendingRedemptions(), _pending, "E3");
-    }
-
-    function test_initiateCooldown_revertsWhileAlreadyPending(
-        uint256 _pending
-    ) public {
-        _pending = bound(_pending, 1, type(uint128).max);
-        stdstore.target(address(infinifiStrategy)).sig("pendingRedemptions()").checked_write(_pending);
-
-        vm.prank(management);
-        vm.expectRevert("!pending");
-        infinifiStrategy.initiateCooldown(type(uint256).max, 0);
     }
 
     function test_initiateCooldown_minInstant(
