@@ -53,7 +53,7 @@ contract Base is DeployStrategyFactory, Test {
         isTest = true;
 
         // Create fork
-        uint256 _blockNumber = 25_043_786; // cache state for faster tests
+        uint256 _blockNumber = 26_010_000; // cache state for faster tests
         vm.selectFork(vm.createFork(vm.envString("ETH_RPC_URL"), _blockNumber));
 
         // Deploy the StrategyFactory
