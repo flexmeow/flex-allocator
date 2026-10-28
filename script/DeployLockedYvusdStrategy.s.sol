@@ -2,48 +2,27 @@
 pragma solidity 0.8.30;
 
 import {IStrategy} from "../src/interfaces/IStrategy.sol";
-import {ICentralAPROracle} from "./interfaces/ICentralAPROracle.sol";
-import {ICommonReportTrigger} from "./interfaces/ICommonReportTrigger.sol";
 
 import {LockedYvusdFlexLenderStrategy} from "../src/integrations/LockedYvusdStrategy.sol";
 
-import "forge-std/Script.sol";
+import "./Base.s.sol";
 
 // ---- Usage ----
 
 // deploy:
 // forge script script/DeployLockedYvusdStrategy.s.sol:DeployLockedYvusdStrategy --verify --slow --etherscan-api-key $KEY --rpc-url $RPC_URL --broadcast
 
-contract DeployLockedYvusdStrategy is Script {
+contract DeployLockedYvusdStrategy is BaseScript {
 
     // Market params
     string public constant NAME = "Flex Locked yvUSD/USDC Lender";
     address public constant LENDER = address(0); // TODO: Flex v2 Locked yvUSD/USDC Lender
-
-    // Yearn addresses
-    address public constant SMS = 0x16388463d60FFE0661Cf7F1f31a7D658aC790ff7; // sms mainnet
-    address public constant VAULT = 0x863687e4E9751b57F38b4B0ebA04744C72d0f7B8; // yvFlexUSDC mainnet
-    address public constant KEEPER = 0x604e586F17cE106B64185A7a0d2c1Da5bAce711E; // yHaaS mainnet
-    address public constant ACCOUNTANT = 0x5A74Cb32D36f2f517DB6f7b0A0591e09b22cDE69; // accountant mainnet
-
-    // Deployed contracts
-    address public constant EXIT_ROUTER = 0xe8a511403B0C83e7b85513e00Ed39996B48c2aeD;
-    address public constant FIXED_REPORT_TRIGGER = 0xb9F57B62Cbe9463da16E5b75e3B809321a0eA871;
-    address public constant STRATEGY_APR_ORACLE = 0xcB5A60AB76F3741204C87744ECFe0445C74Eb171;
-    ICentralAPROracle public constant CENTRAL_APR_ORACLE = ICentralAPROracle(0x1981AD9F44F2EA9aDd2dC4AD7D075c102C70aF92);
-    ICommonReportTrigger public constant COMMON_REPORT_TRIGGER = ICommonReportTrigger(0xf8dF17a35c88AbB25e83C92f9D293B4368b9D52D);
+    address public constant VAULT = YVFLEXUSDC;
 
     function run() public {
-        uint256 _pk = vm.envUint("DEPLOYER_PRIVATE_KEY");
-
-        // Derive deployer address from private key
-        address _deployerAddress = vm.addr(_pk);
-
-        require(_deployerAddress == address(0x000005281a2b04A182085D37cC9E6dD552795caa), "!johnny.flexmeow.eth");
         require(LENDER != address(0), "!lender");
-        console.log("Deployer address: %s", _deployerAddress);
 
-        vm.startBroadcast(_pk);
+        vm.startBroadcast(_deployerKey());
 
         // Deploy the Strategy. The deployer is management, keeper, and fee recipient until set below
         IStrategy _strategy = IStrategy(address(new LockedYvusdFlexLenderStrategy(LENDER, EXIT_ROUTER, NAME)));
