@@ -20,6 +20,7 @@ abstract contract BaseScript is Script {
 
     // Vaults
     address public constant YVUSDC1 = 0xBe53A109B494E5c9f97b9Cd39Fe969BE68BF6204; // yvUSDC-1 mainnet
+    address public constant YVWETH1 = 0xc56413869c6CDf96496f2b1eF801fEDBdFA7dDB0; // yvWETH-1 mainnet
     address public constant YVFLEXUSDC = 0x863687e4E9751b57F38b4B0ebA04744C72d0f7B8; // yvFlexUSDC mainnet
     address public constant YVFLEXWETH = 0xfaC55fAFD0b55BFb8dD41F735EfCc195adA9891F; // yvFlexWETH mainnet
 
