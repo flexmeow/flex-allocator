@@ -33,7 +33,8 @@ interface ICooldownStrategy is IStrategy {
 
     function forceFreeFundsInKind(
         uint256 _amount,
-        uint256 _minOut
+        uint256 _minBorrowOut,
+        uint256 _minCollateralOut
     ) external returns (uint256);
 
 }

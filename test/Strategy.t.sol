@@ -222,7 +222,7 @@ contract StrategyTests is Base {
 
         // Freeing everything still works, as the amount is never converted
         vm.prank(management);
-        strategy.forceFreeFunds(type(uint256).max, 0);
+        strategy.forceFreeFunds(type(uint256).max, 0, 0);
 
         assertEq(LENDER.balanceOf(address(strategy)), 0, "E0");
         assertGt(asset.balanceOf(address(strategy)), 0, "E1");
@@ -258,8 +258,9 @@ contract StrategyTests is Base {
         IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
         uint256 _nonceBefore = _dutchDesk.nonce();
 
+        // The collateral minimum only applies when an auction is kicked
         vm.prank(management);
-        uint256 _freed = strategy.forceFreeFunds(_amount, _amount - 1);
+        uint256 _freed = strategy.forceFreeFunds(_amount, _amount - 1, type(uint256).max);
 
         // No auction was kicked - the Lender covered it from idle
         assertEq(_dutchDesk.nonce(), _nonceBefore, "auction kicked");
@@ -287,7 +288,7 @@ contract StrategyTests is Base {
 
         // Force-free the full amount - shortfall kicks an auction (no min-out enforced, async delivery)
         vm.prank(management);
-        strategy.forceFreeFunds(_amount, 0);
+        strategy.forceFreeFunds(_amount, 0, 0);
 
         assertEq(_dutchDesk.nonce(), _nonceBefore + 1, "E0");
 
@@ -320,7 +321,7 @@ contract StrategyTests is Base {
         uint256 _auctionId = _dutchDesk.nonce();
 
         vm.prank(management);
-        strategy.forceFreeFunds(_amount, 0);
+        strategy.forceFreeFunds(_amount, 0, 0);
         assertEq(strategy.pendingAuctionId(), _auctionId, "E0");
 
         // Reporting is blocked while the auction settles
@@ -331,7 +332,7 @@ contract StrategyTests is Base {
         // So is freeing more funds
         vm.prank(management);
         vm.expectRevert("!auction");
-        strategy.forceFreeFunds(_amount, 0);
+        strategy.forceFreeFunds(_amount, 0, 0);
 
         // Once the auction is taken, reporting works again. Allow a loss, since the auction settles
         // below the oracle price by the decay it took to get filled
@@ -358,7 +359,7 @@ contract StrategyTests is Base {
         uint256 _auctionId = _dutchDesk.nonce();
 
         vm.prank(management);
-        strategy.forceFreeFunds(_amount, 0);
+        strategy.forceFreeFunds(_amount, 0, 0);
 
         // Let the auction expire untaken
         skip(_auction.auction_length() + 1);
@@ -370,7 +371,7 @@ contract StrategyTests is Base {
         strategy.report();
         vm.prank(management);
         vm.expectRevert("!auction");
-        strategy.forceFreeFunds(_amount, 0);
+        strategy.forceFreeFunds(_amount, 0, 0);
 
         // Re-kick and take, then reporting works again
         _dutchDesk.re_kick(_auctionId);
@@ -394,7 +395,40 @@ contract StrategyTests is Base {
         // `_minOut = _amount` enforces an atomic delivery the Lender can't satisfy
         vm.prank(management);
         vm.expectRevert("shrekt");
-        strategy.forceFreeFunds(_amount, _amount);
+        strategy.forceFreeFunds(_amount, _amount, 0);
+    }
+
+    function test_forceFreeFunds_minCollateralOut_reverts(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drain the Lender's idle so the force free kicks an auction
+        openTrove(address(77), _amount);
+
+        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
+        IAuction _auction = IAuction(_dutchDesk.auction());
+        uint256 _auctionId = _dutchDesk.nonce();
+
+        // Read how much collateral the redemption auctions
+        uint256 _snapshot = vm.snapshotState();
+        vm.prank(management);
+        strategy.forceFreeFunds(_amount, 0, 0);
+        uint256 _collateralOut = _auction.auctions(_auctionId).initial_amount;
+        assertGt(_collateralOut, 0, "E0");
+        vm.revertToState(_snapshot);
+
+        // Asking for more reverts
+        vm.prank(management);
+        vm.expectRevert("!collateral");
+        strategy.forceFreeFunds(_amount, 0, _collateralOut + 1);
+
+        // Asking for exactly that works
+        vm.prank(management);
+        strategy.forceFreeFunds(_amount, 0, _collateralOut);
+        assertEq(_auction.auctions(_auctionId).initial_amount, _collateralOut, "E1");
     }
 
     function test_deployIdleFunds(
@@ -587,13 +621,14 @@ contract StrategyTests is Base {
     function test_forceFreeFunds_wrongCaller(
         address _wrongCaller,
         uint256 _amount,
-        uint256 _minOut
+        uint256 _minBorrowOut,
+        uint256 _minCollateralOut
     ) public {
         vm.assume(_wrongCaller != management);
 
         vm.prank(_wrongCaller);
         vm.expectRevert("!management");
-        strategy.forceFreeFunds(_amount, _minOut);
+        strategy.forceFreeFunds(_amount, _minBorrowOut, _minCollateralOut);
     }
 
     function test_deployIdleFunds_wrongCaller(

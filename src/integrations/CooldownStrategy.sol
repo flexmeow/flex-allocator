@@ -90,14 +90,16 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
     /// @dev The take payment nets out against the proceeds owed to us, so it only succeeds without
     ///      payment when the market has no starting price buffer
     /// @param _amount The amount of asset to free
-    /// @param _minOut Minimum amount of asset delivered atomically
+    /// @param _minBorrowOut Minimum amount of asset delivered atomically
+    /// @param _minCollateralOut Minimum amount of collateral auctioned by the redemption
     /// @return _freed The actual amount of asset freed
     function forceFreeFundsInKind(
         uint256 _amount,
-        uint256 _minOut
+        uint256 _minBorrowOut,
+        uint256 _minCollateralOut
     ) external onlyManagement returns (uint256 _freed) {
         // Free the funds, which records the kicked auction if there is one
-        _freed = forceFreeFunds(_amount, _minOut);
+        _freed = forceFreeFunds(_amount, _minBorrowOut, _minCollateralOut);
 
         // Take the kicked auction, receiving the collateral in kind
         uint256 _auctionId = pendingAuctionId;

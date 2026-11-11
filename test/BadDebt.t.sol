@@ -51,7 +51,7 @@ contract BadDebtTests is Base {
         // The redemption path is bricked, freeing beyond idle underflows on the underwater trove
         vm.prank(management);
         vm.expectRevert();
-        strategy.forceFreeFunds(type(uint256).max, 0);
+        strategy.forceFreeFunds(type(uint256).max, 0, 0);
 
         // The user hands their vault shares to the exiter contract
         BadDebtExiter _exiter = new BadDebtExiter();
