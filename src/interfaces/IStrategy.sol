@@ -3,6 +3,8 @@ pragma solidity 0.8.30;
 
 import {IBaseHealthCheck} from "@periphery/Bases/HealthCheck/IBaseHealthCheck.sol";
 
+import {IAuction} from "../interfaces/IAuction.sol";
+import {IDutchDesk} from "../interfaces/IDutchDesk.sol";
 import {ILender} from "../interfaces/ILender.sol";
 
 interface IStrategy is IBaseHealthCheck {
@@ -14,6 +16,10 @@ interface IStrategy is IBaseHealthCheck {
     function LENDER() external view returns (ILender);
 
     function EXIT_ROUTER() external view returns (address);
+
+    function DUTCH_DESK() external view returns (IDutchDesk);
+
+    function AUCTION() external view returns (IAuction);
 
     // ============================================================================================
     // Storage
@@ -39,7 +45,8 @@ interface IStrategy is IBaseHealthCheck {
 
     function forceFreeFunds(
         uint256 _amount,
-        uint256 _minOut
+        uint256 _minBorrowOut,
+        uint256 _minCollateralOut
     ) external returns (uint256);
 
     function deployIdleFunds(

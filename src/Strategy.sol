@@ -134,11 +134,13 @@ contract FlexLenderStrategy is BaseHealthCheck {
     /// @dev Anyone can deposit and redeploy the freed asset back into the Lender, so it should be
     ///      reallocated in the same transaction
     /// @param _amount The amount of asset to free
-    /// @param _minOut Minimum amount of asset delivered atomically
+    /// @param _minBorrowOut Minimum amount of asset delivered atomically
+    /// @param _minCollateralOut Minimum amount of collateral auctioned by the redemption
     /// @return The actual amount of asset freed
     function forceFreeFunds(
         uint256 _amount,
-        uint256 _minOut
+        uint256 _minBorrowOut,
+        uint256 _minCollateralOut
     ) public onlyManagement returns (uint256) {
         // Make sure our last auction is fully settled
         require(AUCTION.auctions(pendingAuctionId).kick_timestamp == 0, "!auction");
@@ -155,10 +157,15 @@ contract FlexLenderStrategy is BaseHealthCheck {
         _amount = _shares > 0 ? LENDER.redeem(_shares, address(this), address(this)) : 0;
 
         // Make sure we got at least the minimum amount requested
-        require(_amount >= _minOut, "shrekt");
+        require(_amount >= _minBorrowOut, "shrekt");
 
-        // Record the kicked auction
-        if (DUTCH_DESK.nonce() > _nextAuctionId) pendingAuctionId = _nextAuctionId;
+        if (DUTCH_DESK.nonce() > _nextAuctionId) {
+            // Make sure the redemption auctioned at least the minimum collateral requested
+            require(AUCTION.auctions(_nextAuctionId).initial_amount >= _minCollateralOut, "!collateral");
+
+            // Record the kicked auction
+            pendingAuctionId = _nextAuctionId;
+        }
 
         // Emit event
         emit ForceFreeFunds(_amount);

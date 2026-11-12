@@ -57,6 +57,22 @@ abstract contract CooldownStrategyTests is Base {
         assertEq(LENDER.balanceOf(address(strategy)), 0, "E2");
     }
 
+    function test_forceFreeFundsInKind_minCollateralOut_reverts(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drain the Lender's idle completely
+        openTrove(address(77), asset.balanceOf(address(LENDER)));
+
+        // Asking for more collateral than the redemption auctions reverts
+        vm.prank(management);
+        vm.expectRevert("!collateral");
+        cooldownStrategy.forceFreeFundsInKind(_amount, 0, type(uint256).max);
+    }
+
     // Collateral taken in kind is pending from the take on, so reports are blocked before any
     // cooldown is even started
     function test_report_blockedWhilePending(
@@ -137,7 +153,7 @@ abstract contract CooldownStrategyTests is Base {
 
         // Force-free with an in-kind take: kick + self-take at the oracle price atomically
         vm.prank(management);
-        cooldownStrategy.forceFreeFundsInKind(_amount, 0);
+        cooldownStrategy.forceFreeFundsInKind(_amount, 0, 0);
 
         return _collateral().balanceOf(address(strategy));
     }
