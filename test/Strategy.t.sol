@@ -680,7 +680,7 @@ contract StrategyTests is Base {
         _strategies[0] = strategy;
 
         vm.expectRevert("!vault");
-        exitRouter.redeem(_vault, _shares, _receiver, _maxLoss, _strategies);
+        exitRouter.redeem(_vault, _shares, _receiver, _maxLoss, new uint256[](1), _strategies);
     }
 
     function test_exitRouter_redeem(
@@ -708,7 +708,7 @@ contract StrategyTests is Base {
         _strategies[0] = strategy;
         vm.startPrank(user);
         ERC20(address(_vault)).approve(address(exitRouter), _shares);
-        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _strategies);
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, new uint256[](1), _strategies);
         vm.stopPrank();
 
         // The vault position is closed and an auction was kicked with the user as receiver
@@ -721,6 +721,48 @@ contract StrategyTests is Base {
         uint256 _balanceBefore = asset.balanceOf(user);
         takeAuction(_auctionId, _auction);
         assertApproxEqRel(asset.balanceOf(user) - _balanceBefore, _amount, 1e16, "E3"); // 1%
+    }
+
+    function test_exitRouter_redeem_minCollateralOut_reverts(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        IVault _vault = _setUpVault(_amount);
+
+        // Drain the Lender's idle so the exit kicks an auction
+        openTrove(address(77), asset.balanceOf(address(LENDER)));
+
+        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
+        IAuction _auction = IAuction(_dutchDesk.auction());
+        uint256 _auctionId = _dutchDesk.nonce();
+
+        uint256 _shares = _vault.balanceOf(user);
+        IStrategy[] memory _strategies = new IStrategy[](1);
+        _strategies[0] = strategy;
+        uint256[] memory _minCollateralOut = new uint256[](1);
+        vm.prank(user);
+        ERC20(address(_vault)).approve(address(exitRouter), _shares);
+
+        // Read how much collateral the redemption auctions
+        uint256 _snapshot = vm.snapshotState();
+        vm.prank(user);
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _minCollateralOut, _strategies);
+        uint256 _collateralOut = _auction.auctions(_auctionId).initial_amount;
+        assertGt(_collateralOut, 0, "E0");
+        vm.revertToState(_snapshot);
+
+        // Asking for more reverts
+        _minCollateralOut[0] = _collateralOut + 1;
+        vm.prank(user);
+        vm.expectRevert("!collateral");
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _minCollateralOut, _strategies);
+
+        // Asking for exactly that works
+        _minCollateralOut[0] = _collateralOut;
+        vm.prank(user);
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _minCollateralOut, _strategies);
+        assertEq(_auction.auctions(_auctionId).initial_amount, _collateralOut, "E1");
     }
 
     function test_exitRouter_redeem_clearsReceiver(
@@ -736,7 +778,7 @@ contract StrategyTests is Base {
         _strategies[0] = strategy;
         vm.startPrank(user);
         ERC20(address(_vault)).approve(address(exitRouter), _shares);
-        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _strategies);
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, new uint256[](1), _strategies);
         vm.stopPrank();
 
         // The router cleared the receiver before returning, so the limit is idle-bound again
@@ -804,7 +846,7 @@ contract StrategyTests is Base {
         uint256 _shares = _vault.balanceOf(user);
         vm.prank(user);
         vm.expectRevert("insufficient allowance");
-        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _strategies);
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, new uint256[](1), _strategies);
     }
 
     // An approval given to the router is only ever spendable by the approver, so it cannot be used to
@@ -829,9 +871,9 @@ contract StrategyTests is Base {
         address _attacker = address(777);
         vm.startPrank(_attacker);
         vm.expectRevert("insufficient shares to redeem");
-        exitRouter.redeem(address(_vault), _shares, _attacker, MAX_BPS, _strategies);
+        exitRouter.redeem(address(_vault), _shares, _attacker, MAX_BPS, new uint256[](1), _strategies);
         vm.expectRevert("insufficient shares to redeem");
-        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _strategies);
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, new uint256[](1), _strategies);
         vm.stopPrank();
 
         // The user still holds everything
@@ -855,7 +897,7 @@ contract SequencedExitAttacker {
         ERC20(address(_vault)).approve(address(_router), _shares);
         IStrategy[] memory _strategies = new IStrategy[](1);
         _strategies[0] = _strategy;
-        _router.redeem(address(_vault), _shares, address(this), 10_000, _strategies);
+        _router.redeem(address(_vault), _shares, address(this), 10_000, new uint256[](1), _strategies);
 
         // Then try to divert the rest of the position to ourselves
         _vault.update_debt(address(_strategy), 0);

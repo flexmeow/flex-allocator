@@ -56,6 +56,35 @@ contract PartialRedemptionTests is Base {
         assertApproxEqRel(_auction.auctions(_auctionId).maximum_amount, AMOUNT / 2, 1e16, "E1"); // 1%
     }
 
+    function test_exitRouter_partialRedemption() public {
+        IVault _vault = _setUpVault(AMOUNT);
+        _stuffTroves();
+
+        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
+        IAuction _auction = IAuction(_dutchDesk.auction());
+        uint256 _auctionId = _dutchDesk.nonce();
+
+        uint256 _shares = _vault.balanceOf(user);
+        IStrategy[] memory _strategies = new IStrategy[](1);
+        _strategies[0] = strategy;
+        uint256[] memory _minCollateralOut = new uint256[](1);
+        _minCollateralOut[0] = _collateralFor(AMOUNT) * 99 / 100;
+        vm.startPrank(user);
+        ERC20(address(_vault)).approve(address(exitRouter), _shares);
+
+        // The walk stops after 1,000 Troves, so the redemption auctions about half of the exit
+        vm.expectRevert("!collateral");
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _minCollateralOut, _strategies);
+
+        // Without the minimum, every vault share is burned but the auction only owes about half of them
+        _minCollateralOut[0] = 0;
+        exitRouter.redeem(address(_vault), _shares, user, MAX_BPS, _minCollateralOut, _strategies);
+        vm.stopPrank();
+
+        assertEq(_vault.balanceOf(user), 0, "E0");
+        assertApproxEqRel(_auction.auctions(_auctionId).maximum_amount, AMOUNT / 2, 1e16, "E1"); // 1%
+    }
+
     // ============================================================================================
     // Helpers
     // ============================================================================================
