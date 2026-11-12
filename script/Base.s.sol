@@ -25,12 +25,12 @@ abstract contract BaseScript is Script {
     address public constant YVFLEXWETH = 0xfaC55fAFD0b55BFb8dD41F735EfCc195adA9891F; // yvFlexWETH mainnet
 
     // Deployed contracts
-    address public constant EXIT_ROUTER = 0xe8a511403B0C83e7b85513e00Ed39996B48c2aeD;
+    address public constant EXIT_ROUTER = 0xFf492Abc3f45e482Ad5C7aF22e045cEDcA207f7a;
     address public constant FIXED_REPORT_TRIGGER = 0xb9F57B62Cbe9463da16E5b75e3B809321a0eA871;
-    address public constant STRATEGY_APR_ORACLE = 0xcB5A60AB76F3741204C87744ECFe0445C74Eb171;
+    address public constant STRATEGY_APR_ORACLE = 0x008A6737b134163AAfdCb538F8026Cfc6788c546;
     ICentralAPROracle public constant CENTRAL_APR_ORACLE = ICentralAPROracle(0x1981AD9F44F2EA9aDd2dC4AD7D075c102C70aF92);
     ICommonReportTrigger public constant COMMON_REPORT_TRIGGER = ICommonReportTrigger(0xf8dF17a35c88AbB25e83C92f9D293B4368b9D52D);
-    StrategyFactory public constant STRATEGY_FACTORY = StrategyFactory(0x1792348Fe3ebDdc0C6bB123aC24c094ac9D78252);
+    StrategyFactory public constant STRATEGY_FACTORY = StrategyFactory(0x6ddB84B50d7E5e2159fd5615613dE927D9824832);
 
     /// @notice Load the deployer's private key, making sure it's johnny.flexmeow.eth
     function _deployerKey() internal view returns (uint256 _pk) {
