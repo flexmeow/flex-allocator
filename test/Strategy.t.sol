@@ -304,9 +304,8 @@ contract StrategyTests is Base {
         assertApproxEqAbs(asset.balanceOf(address(strategy)), _amount, 10, "E5");
     }
 
-    // A settling auction's proceeds are not counted yet, so reports and further force frees are blocked
-    // until it settles
-    function test_forceFreeFunds_settlingAuction_blocks(
+    // A settling auction's proceeds are not counted yet, so the health check blocks reports until it settles
+    function test_forceFreeFunds_settlingAuction_blocksReport(
         uint256 _amount
     ) public {
         _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
@@ -322,16 +321,14 @@ contract StrategyTests is Base {
 
         vm.prank(management);
         strategy.forceFreeFunds(_amount, 0, 0);
-        assertEq(strategy.pendingAuctionId(), _auctionId, "E0");
 
         // Reporting is blocked while the auction settles
         vm.prank(keeper);
-        vm.expectRevert("!auction");
+        vm.expectRevert("healthCheck");
         strategy.report();
 
-        // So is freeing more funds
+        // Freeing more funds is not
         vm.prank(management);
-        vm.expectRevert("!auction");
         strategy.forceFreeFunds(_amount, 0, 0);
 
         // Once the auction is taken, reporting works again. Allow a loss, since the auction settles
@@ -344,7 +341,7 @@ contract StrategyTests is Base {
     }
 
     // An expired, untaken auction is inactive but not settled, its proceeds are still owed
-    function test_forceFreeFunds_expiredAuction_blocks(
+    function test_forceFreeFunds_expiredAuction_blocksReport(
         uint256 _amount
     ) public {
         _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
@@ -365,13 +362,10 @@ contract StrategyTests is Base {
         skip(_auction.auction_length() + 1);
         assertFalse(_auction.is_active(_auctionId), "E0");
 
-        // Reporting and freeing more funds are still blocked
+        // Reporting is still blocked
         vm.prank(keeper);
-        vm.expectRevert("!auction");
+        vm.expectRevert("healthCheck");
         strategy.report();
-        vm.prank(management);
-        vm.expectRevert("!auction");
-        strategy.forceFreeFunds(_amount, 0, 0);
 
         // Re-kick and take, then reporting works again
         _dutchDesk.re_kick(_auctionId);

@@ -73,6 +73,34 @@ abstract contract CooldownStrategyTests is Base {
         cooldownStrategy.forceFreeFundsInKind(_amount, 0, type(uint256).max);
     }
 
+    // An in kind free only takes the auction it kicked, never an older one that is still open
+    function test_forceFreeFundsInKind_ignoresOlderAuction(
+        uint256 _amount
+    ) public {
+        _amount = bound(_amount, minFuzzAmount, maxFuzzAmount);
+
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        // Drain the Lender's idle completely
+        openTrove(address(77), asset.balanceOf(address(LENDER)));
+
+        IDutchDesk _dutchDesk = IDutchDesk(ITroveManager(address(LENDER.TROVE_MANAGER())).dutch_desk());
+        IAuction _auction = IAuction(_dutchDesk.auction());
+        uint256 _auctionId = _dutchDesk.nonce();
+
+        // A plain force free leaves its auction open for takers
+        vm.prank(management);
+        strategy.forceFreeFunds(_amount, 0, 0);
+        uint256 _available = _auction.get_available_amount(_auctionId);
+        assertGt(_available, 0, "E0");
+
+        // An in kind free that kicks nothing takes nothing
+        vm.prank(management);
+        cooldownStrategy.forceFreeFundsInKind(_amount, 0, 0);
+        assertEq(_auction.get_available_amount(_auctionId), _available, "E1");
+        assertEq(cooldownStrategy.takenInKind(), 0, "E2");
+    }
+
     // Collateral taken in kind is pending from the take on, so reports are blocked before any
     // cooldown is even started
     function test_report_blockedWhilePending(
