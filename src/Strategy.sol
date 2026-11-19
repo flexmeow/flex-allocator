@@ -233,7 +233,9 @@ contract FlexLenderStrategy is BaseHealthCheck {
             ? LENDER.maxRedeem(address(this))
             : Math.min(LENDER.previewWithdraw(_amount), LENDER.maxRedeem(address(this)));
 
-        // Withdraw everything we can, trigger a collateral redemption if needed
+        // Withdraw everything we can, trigger a collateral redemption if needed.
+        // There are no minimum amounts here, so the redemption may free less than the shares it burns.
+        // Use `forceFreeFunds` for anything beyond the Lender's idle liquidity
         LENDER.redeem(_shares, address(this), address(this));
     }
 
