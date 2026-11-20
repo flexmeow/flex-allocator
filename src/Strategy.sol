@@ -54,13 +54,6 @@ contract FlexLenderStrategy is BaseHealthCheck {
     address internal transient _proceedsReceiver;
 
     // ============================================================================================
-    // Storage
-    // ============================================================================================
-
-    /// @notice Auction kicked by the last `forceFreeFunds`
-    uint256 public pendingAuctionId;
-
-    // ============================================================================================
     // Constructor
     // ============================================================================================
 
@@ -85,9 +78,6 @@ contract FlexLenderStrategy is BaseHealthCheck {
         // Set Dutch Desk and Auction contracts
         DUTCH_DESK = IDutchDesk(LENDER.TROVE_MANAGER().dutch_desk());
         AUCTION = IAuction(DUTCH_DESK.auction());
-
-        // Start with an auction id that was (likely) never kicked
-        pendingAuctionId = type(uint256).max;
 
         // Max approve the Lender to pull the asset
         asset.forceApprove(_lender, type(uint256).max);
@@ -130,7 +120,6 @@ contract FlexLenderStrategy is BaseHealthCheck {
     /// @dev Only callable by management
     /// @dev Could trigger a collateral redemption, meaning assets will arrive asynchronously
     ///      and may create a loss on the collateral/asset conversion
-    /// @dev Cannot be called while there is an active auction
     /// @dev Anyone can deposit and redeploy the freed asset back into the Lender, so it should be
     ///      reallocated in the same transaction
     /// @param _amount The amount of asset to free
@@ -142,9 +131,6 @@ contract FlexLenderStrategy is BaseHealthCheck {
         uint256 _minBorrowOut,
         uint256 _minCollateralOut
     ) public onlyManagement returns (uint256) {
-        // Make sure our last auction is fully settled
-        require(AUCTION.auctions(pendingAuctionId).kick_timestamp == 0, "!auction");
-
         // Cache the next auction id, in case the redemption kicks one
         uint256 _nextAuctionId = DUTCH_DESK.nonce();
 
@@ -159,13 +145,8 @@ contract FlexLenderStrategy is BaseHealthCheck {
         // Make sure we got at least the minimum amount requested
         require(_amount >= _minBorrowOut, "shrekt");
 
-        if (DUTCH_DESK.nonce() > _nextAuctionId) {
-            // Make sure the redemption auctioned at least the minimum collateral requested
-            require(AUCTION.auctions(_nextAuctionId).initial_amount >= _minCollateralOut, "!collateral");
-
-            // Record the kicked auction
-            pendingAuctionId = _nextAuctionId;
-        }
+        // Make sure the redemption auctioned at least the minimum collateral requested
+        require(DUTCH_DESK.nonce() == _nextAuctionId || AUCTION.auctions(_nextAuctionId).initial_amount >= _minCollateralOut, "!collateral");
 
         // Emit event
         emit ForceFreeFunds(_amount);
@@ -239,9 +220,6 @@ contract FlexLenderStrategy is BaseHealthCheck {
 
     /// @inheritdoc BaseStrategy
     function _harvestAndReport() internal view virtual override returns (uint256) {
-        // Wait for our auction to be fully settled
-        require(AUCTION.auctions(pendingAuctionId).kick_timestamp == 0, "!auction");
-
         // Total assets is whatever idle asset we have + our Lender shares converted to asset
         return asset.balanceOf(address(this)) + LENDER.convertToAssets(LENDER.balanceOf(address(this)));
     }
@@ -255,7 +233,9 @@ contract FlexLenderStrategy is BaseHealthCheck {
             ? LENDER.maxRedeem(address(this))
             : Math.min(LENDER.previewWithdraw(_amount), LENDER.maxRedeem(address(this)));
 
-        // Withdraw everything we can, trigger a collateral redemption if needed
+        // Withdraw everything we can, trigger a collateral redemption if needed.
+        // There are no minimum amounts here, so the redemption may free less than the shares it burns.
+        // Use `forceFreeFunds` for anything beyond the Lender's idle liquidity
         LENDER.redeem(_shares, address(this), address(this));
     }
 

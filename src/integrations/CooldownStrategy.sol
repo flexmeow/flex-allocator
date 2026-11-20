@@ -98,11 +98,13 @@ abstract contract CooldownFlexLenderStrategy is FlexLenderStrategy {
         uint256 _minBorrowOut,
         uint256 _minCollateralOut
     ) external onlyManagement returns (uint256 _freed) {
-        // Free the funds, which records the kicked auction if there is one
+        // Cache the next auction id, in case the redemption kicks one
+        uint256 _auctionId = DUTCH_DESK.nonce();
+
+        // Free the funds
         _freed = forceFreeFunds(_amount, _minBorrowOut, _minCollateralOut);
 
         // Take the kicked auction, receiving the collateral in kind
-        uint256 _auctionId = pendingAuctionId;
         if (AUCTION.is_active(_auctionId)) takenInKind += AUCTION.take(_auctionId);
     }
 
