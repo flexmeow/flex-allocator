@@ -30,10 +30,10 @@ contract DeployStrategyFactory is BaseScript {
 
         vm.startBroadcast(_pk);
 
-        // Deploy the ExitRouter, the StrategyFactory, and the StrategyAprOracle
-        exitRouter = new FlexExitRouter();
+        // Deploy the StrategyFactory. Outside of tests, reuse the live ExitRouter and StrategyAprOracle
+        exitRouter = isTest ? new FlexExitRouter() : FlexExitRouter(EXIT_ROUTER);
         strategyFactory = new StrategyFactory(address(exitRouter));
-        strategyAprOracle = new StrategyAprOracle();
+        strategyAprOracle = isTest ? new StrategyAprOracle() : StrategyAprOracle(STRATEGY_APR_ORACLE);
 
         if (isTest) {
             vm.label({account: address(exitRouter), newLabel: "ExitRouter"});
