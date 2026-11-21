@@ -55,9 +55,7 @@ contract FlexExitRouter {
         IStrategy[] calldata _strategies
     ) internal view returns (uint256[] memory _nextAuctionIds) {
         _nextAuctionIds = new uint256[](_strategies.length);
-        for (uint256 i; i < _strategies.length; ++i) {
-            _nextAuctionIds[i] = _strategies[i].DUTCH_DESK().nonce();
-        }
+        for (uint256 i; i < _strategies.length; ++i) _nextAuctionIds[i] = _strategies[i].DUTCH_DESK().nonce();
     }
 
     /// @dev Check every given strategy's kicked auction, if any, against its minimum collateral
@@ -85,9 +83,7 @@ contract FlexExitRouter {
         address _receiver,
         address _vault
     ) internal {
-        for (uint256 i; i < _strategies.length; ++i) {
-            _strategies[i].setProceedsReceiver(_receiver, _vault);
-        }
+        for (uint256 i; i < _strategies.length; ++i) _strategies[i].setProceedsReceiver(_receiver, _vault);
     }
 
 }

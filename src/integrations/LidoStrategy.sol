@@ -141,9 +141,7 @@ contract LidoFlexLenderStrategy is CooldownFlexLenderStrategy {
         // Consume the queued stETH variable
         ILidoWithdrawalQueue.WithdrawalRequestStatus[] memory _statuses = WITHDRAWAL_QUEUE.getWithdrawalStatus(_requestIds);
         uint256 _claimedSteth;
-        for (uint256 i; i < _statuses.length; ++i) {
-            _claimedSteth += _statuses[i].amountOfStETH;
-        }
+        for (uint256 i; i < _statuses.length; ++i) _claimedSteth += _statuses[i].amountOfStETH;
         queuedSteth -= Math.min(_claimedSteth, queuedSteth);
 
         // Claim the withdrawals and wrap the received ETH
